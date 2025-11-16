@@ -1225,8 +1225,8 @@ class SqliteDatabase : public Database {
 
   void WriteConstrainingPoints(
       const std::vector<Eigen::Vector3d>& points) const override {
-    Sqlite3StmtContext context(sql_stmt_write_constraining_points_);
     for (const auto& point : points) {
+      Sqlite3StmtContext context(sql_stmt_write_constraining_points_);
       SQLITE3_CALL(sqlite3_bind_int64(
           sql_stmt_write_constraining_points_, 1, point.x()));
       SQLITE3_CALL(sqlite3_bind_int64(
@@ -1807,7 +1807,7 @@ class SqliteDatabase : public Database {
     prepare_sql_stmt(
         "SELECT pair_id, rows FROM two_view_geometries WHERE rows > 0;",
         &sql_stmt_read_two_view_geometry_num_inliers_);
-    prepare_sql_stmt("SELECT point3D_id, x, y, z FROM constraining_points;",
+    prepare_sql_stmt("SELECT x, y, z FROM constraining_points;",
                      &sql_stmt_read_constraining_points_);
 
     //////////////////////////////////////////////////////////////////////////////

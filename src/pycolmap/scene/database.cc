@@ -582,7 +582,8 @@ void BindDatabase(py::module& m) {
            "image_id2"_a,
            "two_view_geometry"_a)
       .def("write_constraining_points",
-           &Database::WriteConstrainingPoints,
+           py::overload_cast<const std::vector<Eigen::Vector3d>&>(
+               &Database::WriteConstrainingPoints, py::const_),
            "points"_a)
       .def("update_rig", &Database::UpdateRig, "rig"_a)
       .def("update_camera", &Database::UpdateCamera, "camera"_a)
