@@ -791,7 +791,34 @@ class DefaultBundleAdjuster : public BundleAdjuster {
     // Add residuals to bundle adjustment problem.
     size_t num_observations = 0;
     for (const Point2D& point2D : image.Points2D()) {
-      if (!point2D.HasPoint3D() || config_.IsIgnoredPoint(point2D.point3D_id)) {
+      if (config_.IsIgnoredPoint(point2D.point3D_id)) {
+        continue;
+      }
+
+      if (point2D.constraint_point_id >= 0 && options_.apply_constraints) {
+        if (constant_cam_from_world) {
+          // Constraints aren't supported with constant camera poses
+        } else {
+          if (!reconstruction.ExistsConstrainingPoint3D(
+                  point2D.constraint_point_id)) {
+            // Constraint point does not exist in reconstruction object
+          } else {
+            ConstrainingPoint3D constraining_point_3d =
+                reconstruction.ConstrainingPoint3D(point2D.constraint_point_id);
+            problem_->AddResidualBlock(
+                CreateCameraCostFunction<ConstraintReprojErrorCostFunctor>(
+                    camera.model_id, point2D.xy, constraining_point_3d.xyz),
+                new ceres::ScaledLoss(loss_function_.get(),
+                                      point2D.weight,
+                                      ceres::TAKE_OWNERSHIP),
+                cam_from_world.rotation.coeffs().data(),
+                cam_from_world.translation.data(),
+                camera.params.data());
+          }
+        }
+      }
+
+      if (!point2D.HasPoint3D()) {
         continue;
       }
 
@@ -873,7 +900,16 @@ class DefaultBundleAdjuster : public BundleAdjuster {
     // Add residuals to bundle adjustment problem.
     size_t num_observations = 0;
     for (const Point2D& point2D : image.Points2D()) {
-      if (!point2D.HasPoint3D() || config_.IsIgnoredPoint(point2D.point3D_id)) {
+      if (config_.IsIgnoredPoint(point2D.point3D_id)) {
+        continue;
+      }
+
+      if (point2D.constraint_point_id >= 0 && options_.apply_constraints) {
+        throw std::runtime_error(
+            "Constraints are not supported with non-trivial frames");
+      }
+
+      if (!point2D.HasPoint3D()) {
         continue;
       }
 
