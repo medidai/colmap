@@ -474,6 +474,7 @@ void BindDatabase(py::module& m) {
            &Database::ReadMatchesBlob,
            "image_id1"_a,
            "image_id2"_a)
+      .def("read_constraining_points", &Database::ReadConstrainingPoints)
       .def("read_all_matches",
            [](const Database& self) {
              std::vector<std::pair<image_pair_t, FeatureMatchesBlob>>
@@ -580,6 +581,9 @@ void BindDatabase(py::module& m) {
            "image_id1"_a,
            "image_id2"_a,
            "two_view_geometry"_a)
+      .def("write_constraining_points",
+           &Database::WriteConstrainingPoints,
+           "points"_a)
       .def("update_rig", &Database::UpdateRig, "rig"_a)
       .def("update_camera", &Database::UpdateCamera, "camera"_a)
       .def("update_frame", &Database::UpdateFrame, "frame"_a)
