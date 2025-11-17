@@ -1227,11 +1227,11 @@ class SqliteDatabase : public Database {
       const std::vector<Eigen::Vector3d>& points) const override {
     for (const auto& point : points) {
       Sqlite3StmtContext context(sql_stmt_write_constraining_points_);
-      SQLITE3_CALL(sqlite3_bind_int64(
+      SQLITE3_CALL(sqlite3_bind_double(
           sql_stmt_write_constraining_points_, 1, point.x()));
-      SQLITE3_CALL(sqlite3_bind_int64(
+      SQLITE3_CALL(sqlite3_bind_double(
           sql_stmt_write_constraining_points_, 2, point.y()));
-      SQLITE3_CALL(sqlite3_bind_int64(
+      SQLITE3_CALL(sqlite3_bind_double(
           sql_stmt_write_constraining_points_, 3, point.z()));
       SQLITE3_CALL(sqlite3_step(sql_stmt_write_constraining_points_));
     }
