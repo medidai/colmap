@@ -1,2 +1,8 @@
 CompileFlags:
-  CompilationDatabase: build/
+  CompilationDatabase: 
+    - build/
+    - python/build/
+  Add:
+      - -I/Users/xallt/progs/medida/colmap/src
+      - -isystem/opt/homebrew/Cellar/pybind11/3.0.1_1/include
+      - -isystem/opt/homebrew/opt/python@3.10/Frameworks/Python.framework/Versions/3.10/include/python3.10
