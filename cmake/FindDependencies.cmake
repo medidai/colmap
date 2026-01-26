@@ -11,6 +11,7 @@ endif()
 find_package(Boost ${COLMAP_FIND_TYPE} COMPONENTS
              graph
              program_options
+             OPTIONAL_COMPONENTS
              system)
 
 find_package(Eigen3 ${COLMAP_FIND_TYPE})
