@@ -41,9 +41,11 @@ env:
   CODEARTIFACT_REPOSITORY: python
   CODEARTIFACT_REGION: us-east-1
   UV_VERSION: 0.11.30
-  COMPILER_CACHE_DIR: ${{ github.workspace }}/compiler-cache
-  CCACHE_DIR: ${{ github.workspace }}/compiler-cache/ccache
-  CCACHE_MAXSIZE: 400M
+  VCPKG_COMMIT_ID: cd61e1e26a038e82d6550a3ebbe0fbbfe7da78e3
+  NINJA_VERSION: 1.13.2
+  NINJA_LINUX_SHA256: 5749cbc4e668273514150a80e387a957f933c6ed3f5f11e03fb30955e2bbead6
+  CCACHE_LINUX_SHA256: 1733deb871116b7907c42fad6ae1f224e4a482e2a0a429a1300e992412c882c2
+  CCACHE_MAXSIZE: 500M
   MACOSX_DEPLOYMENT_TARGET: "15.0"
 
 jobs:
@@ -62,24 +64,23 @@ jobs:
           uv lock --directory pycolmap --check
           uv sync --directory pycolmap --frozen --no-install-project
 
-  build:
-    name: Build ${{ matrix.platform }}
+  prepare-linux:
+    name: Prepare native prefix ${{ matrix.platform }}
     needs: validate
+    runs-on: ubuntu-24.04
     timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
         include:
           - platform: linux-x86_64
-            runner: ubuntu-24.04
+            abi: manylinux-2_28-2026-06-04-gcc12
             cuda: false
+            image: quay.io/pypa/manylinux_2_28_x86_64:2026.06.04-1@sha256:d3f051574f040b4c1d23b18fd06741cd7288c6f537faa0a76b1c7edf048bfa62
           - platform: linux-x86_64-cuda12
-            runner: ubuntu-24.04
+            abi: manylinux-2_28-cuda12-9-sm89-gcc12
             cuda: true
-          - platform: macos-arm64
-            runner: macos-15
-            cuda: false
-    runs-on: ${{ matrix.runner }}
+            image: pytorch/manylinux2_28-builder:cuda12.9@sha256:d26cd7a9489b53310296e86042de630ac947e25a71dd24b547b86ca9a0a3fc79
     steps:
       - name: Free disk space for CUDA build
         if: matrix.cuda
@@ -95,69 +96,268 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - name: Export GitHub Actions cache credentials
-        uses: actions/github-script@v8
-        with:
-          script: |
-            core.exportVariable("ACTIONS_CACHE_URL", process.env.ACTIONS_CACHE_URL || "");
-            core.exportVariable("ACTIONS_RUNTIME_TOKEN", process.env.ACTIONS_RUNTIME_TOKEN || "");
-      - name: Restore compiler cache
+      - name: Restore native build cache
         uses: actions/cache@v6
         with:
-          path: compiler-cache
-          key: pycolmap-${{ matrix.platform }}-${{ github.sha }}
-          restore-keys: pycolmap-${{ matrix.platform }}-
-      - name: Configure Linux build
-        if: runner.os == 'Linux'
+          path: native-cache
+          key: pycolmap-native-cache-v2-${{ matrix.abi }}-${{ env.VCPKG_COMMIT_ID }}-${{ github.sha }}
+          restore-keys: pycolmap-native-cache-v2-${{ matrix.abi }}-${{ env.VCPKG_COMMIT_ID }}-
+      - name: Restore native prefix
+        id: prefix-cache
+        uses: actions/cache@v6
+        with:
+          path: native-prefix
+          key: >-
+            pycolmap-prefix-v2-${{ matrix.abi }}-${{ env.VCPKG_COMMIT_ID }}-${{
+            hashFiles('vcpkg.json', 'CMakeLists.txt', 'cmake/**', 'src/CMakeLists.txt',
+            'src/colmap/**', 'src/thirdparty/**', 'pycolmap/ci/install-colmap-almalinux.sh',
+            'pycolmap/ci/triplets/**') }}
+      - name: Build native prefix
+        if: steps.prefix-cache.outputs.cache-hit != 'true'
         shell: bash
         run: |
-          echo "CIBW_ARCHS_LINUX=x86_64" >> "$GITHUB_ENV"
-          echo "BUILD_CUDA_ENABLED=${{ matrix.cuda }}" >> "$GITHUB_ENV"
-          echo "CONTAINER_COMPILER_CACHE_DIR=/compiler-cache" >> "$GITHUB_ENV"
-          echo "CCACHE_DIR=/compiler-cache/ccache" >> "$GITHUB_ENV"
-          echo "CCACHE_BASEDIR=/project" >> "$GITHUB_ENV"
-          echo "VCPKG_TARGET_TRIPLET=x64-linux-release" >> "$GITHUB_ENV"
-          echo "VCPKG_INSTALLATION_ROOT=/project/vcpkg" >> "$GITHUB_ENV"
-          echo "CMAKE_TOOLCHAIN_FILE=/project/vcpkg/scripts/buildsystems/vcpkg.cmake" >> "$GITHUB_ENV"
-          echo "VCPKG_BINARY_SOURCES=clear;x-gha,readwrite" >> "$GITHUB_ENV"
-          echo "CIBW_ENVIRONMENT_PASS_LINUX=ACTIONS_CACHE_URL ACTIONS_RUNTIME_TOKEN BUILD_CUDA_ENABLED CCACHE_DIR CCACHE_BASEDIR CCACHE_MAXSIZE CONTAINER_COMPILER_CACHE_DIR VCPKG_TARGET_TRIPLET VCPKG_INSTALLATION_ROOT CMAKE_TOOLCHAIN_FILE VCPKG_BINARY_SOURCES" >> "$GITHUB_ENV"
-          echo "CIBW_CONFIG_SETTINGS=cmake.define.CMAKE_TOOLCHAIN_FILE=/project/vcpkg/scripts/buildsystems/vcpkg.cmake cmake.define.VCPKG_TARGET_TRIPLET=x64-linux-release cmake.define.VCPKG_INSTALLED_DIR=/project/build/vcpkg_installed" >> "$GITHUB_ENV"
-          echo "CIBW_CONTAINER_ENGINE=docker; create_args: -v ${{ github.workspace }}/compiler-cache:/compiler-cache" >> "$GITHUB_ENV"
+          set -euo pipefail
+          rm -rf "${GITHUB_WORKSPACE}/native-prefix"
+          mkdir -p "${GITHUB_WORKSPACE}/native-prefix" "${GITHUB_WORKSPACE}/native-cache"
+          docker run --rm \
+            --volume "${GITHUB_WORKSPACE}:/project" \
+            --volume "${GITHUB_WORKSPACE}/native-prefix:/opt/pycolmap-native" \
+            --volume "${GITHUB_WORKSPACE}/native-cache:/opt/pycolmap-cache" \
+            --workdir /project \
+            --env BUILD_CUDA_ENABLED="${{ matrix.cuda }}" \
+            --env CCACHE_LINUX_SHA256 \
+            --env CCACHE_MAXSIZE \
+            --env NATIVE_CACHE_DIR=/opt/pycolmap-cache \
+            --env NINJA_LINUX_SHA256 \
+            --env NINJA_VERSION \
+            --env VCPKG_COMMIT_ID \
+            --env VCPKG_TARGET_TRIPLET=x64-linux-release \
+            "${{ matrix.image }}" \
+            bash pycolmap/ci/install-colmap-almalinux.sh /opt/pycolmap-native
+      - name: Validate and archive native prefix
+        run: |
+          set -euo pipefail
+          test -f native-prefix/.complete
+          du -sh native-prefix
+          tar -C native-prefix -czf "${RUNNER_TEMP}/pycolmap-native.tar.gz" .
+      - name: Upload native prefix
+        uses: actions/upload-artifact@v7
+        with:
+          name: pycolmap-native-${{ matrix.platform }}
+          path: ${{ runner.temp }}/pycolmap-native.tar.gz
+          if-no-files-found: error
+          retention-days: 1
+      - name: Upload native diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: pycolmap-native-logs-${{ matrix.platform }}
+          path: |
+            native-cache/colmap-build/CMakeFiles/**/*.log
+            native-cache/vcpkg/buildtrees/**/*.log
+          if-no-files-found: warn
+          retention-days: 3
+
+  prepare-macos:
+    name: Prepare native prefix macos-arm64
+    needs: validate
+    runs-on: macos-15
+    timeout-minutes: 120
+    env:
+      NATIVE_PREFIX_DIR: /Users/runner/work/pycolmap-native
+      VCPKG_TARGET_TRIPLET: arm64-osx-release
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Install native build tools
+        run: HOMEBREW_NO_AUTO_UPDATE=1 brew install git cmake ninja gfortran ccache libomp
+      - name: Identify native ABI
+        id: native-abi
+        run: |
+          set -euo pipefail
+          formulae="$(brew list --versions git cmake ninja gcc ccache libomp)"
+          echo "toolchain=$(printf '%s' "${formulae}" | shasum -a 256 | cut -d ' ' -f 1)" >> "${GITHUB_OUTPUT}"
+          echo "runner=${ImageVersion}" >> "${GITHUB_OUTPUT}"
+      - name: Restore native build cache
+        uses: actions/cache@v6
+        with:
+          path: native-cache
+          key: pycolmap-native-cache-v2-macos-arm64-${{ steps.native-abi.outputs.runner }}-${{ steps.native-abi.outputs.toolchain }}-${{ env.VCPKG_COMMIT_ID }}-${{ github.sha }}
+          restore-keys: pycolmap-native-cache-v2-macos-arm64-${{ steps.native-abi.outputs.runner }}-${{ steps.native-abi.outputs.toolchain }}-${{ env.VCPKG_COMMIT_ID }}-
+      - name: Restore native prefix
+        id: prefix-cache
+        uses: actions/cache@v6
+        with:
+          path: /Users/runner/work/pycolmap-native
+          key: >-
+            pycolmap-prefix-v2-macos-arm64-${{ steps.native-abi.outputs.runner }}-${{ steps.native-abi.outputs.toolchain }}-${{ env.VCPKG_COMMIT_ID }}-${{
+            hashFiles('vcpkg.json', 'CMakeLists.txt', 'cmake/**', 'src/CMakeLists.txt',
+            'src/colmap/**', 'src/thirdparty/**', 'pycolmap/ci/install-colmap-macos.sh',
+            'pycolmap/ci/triplets/**') }}
+      - name: Build native prefix
+        if: steps.prefix-cache.outputs.cache-hit != 'true'
+        env:
+          NATIVE_CACHE_DIR: ${{ github.workspace }}/native-cache
+        run: |
+          set -euo pipefail
+          rm -rf "${NATIVE_PREFIX_DIR}"
+          mkdir -p "${NATIVE_PREFIX_DIR}" "${NATIVE_CACHE_DIR}"
+          bash pycolmap/ci/install-colmap-macos.sh "${NATIVE_PREFIX_DIR}"
+      - name: Validate and archive native prefix
+        run: |
+          set -euo pipefail
+          test -f "${NATIVE_PREFIX_DIR}/.complete"
+          du -sh "${NATIVE_PREFIX_DIR}"
+          tar -C "${NATIVE_PREFIX_DIR}" -czf "${RUNNER_TEMP}/pycolmap-native.tar.gz" .
+      - name: Upload native prefix
+        uses: actions/upload-artifact@v7
+        with:
+          name: pycolmap-native-macos-arm64
+          path: ${{ runner.temp }}/pycolmap-native.tar.gz
+          if-no-files-found: error
+          retention-days: 1
+      - name: Upload native diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: pycolmap-native-logs-macos-arm64
+          path: |
+            native-cache/colmap-build/CMakeFiles/**/*.log
+            native-cache/vcpkg/buildtrees/**/*.log
+          if-no-files-found: warn
+          retention-days: 3
+
+  build-linux:
+    name: Build ${{ matrix.platform }} wheel
+    needs: prepare-linux
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux-x86_64
+            cuda: false
+            image: quay.io/pypa/manylinux_2_28_x86_64:2026.06.04-1@sha256:d3f051574f040b4c1d23b18fd06741cd7288c6f537faa0a76b1c7edf048bfa62
+          - platform: linux-x86_64-cuda12
+            cuda: true
+            image: pytorch/manylinux2_28-builder:cuda12.9@sha256:d26cd7a9489b53310296e86042de630ac947e25a71dd24b547b86ca9a0a3fc79
+    steps:
+      - name: Free disk space for CUDA build
+        if: matrix.cuda
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Download native prefix
+        uses: actions/download-artifact@v8
+        with:
+          name: pycolmap-native-${{ matrix.platform }}
+          path: ${{ runner.temp }}/pycolmap-native-archive
+      - name: Extract native prefix
+        run: |
+          set -euo pipefail
+          mkdir -p native-prefix
+          tar -C native-prefix -xzf "${RUNNER_TEMP}/pycolmap-native-archive/pycolmap-native.tar.gz"
+          test -f native-prefix/.complete
+      - name: Cache cibuildwheel downloads
+        uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/cibw-cache
+          key: pycolmap-cibw-v2-${{ matrix.platform }}-4.1.0
+      - name: Configure wheel build
+        run: |
+          echo "CIBW_ARCHS_LINUX=x86_64" >> "${GITHUB_ENV}"
+          echo "CIBW_CACHE_PATH=${RUNNER_TEMP}/cibw-cache" >> "${GITHUB_ENV}"
+          echo "CIBW_MANYLINUX_X86_64_IMAGE=${{ matrix.image }}" >> "${GITHUB_ENV}"
+          echo "CIBW_BEFORE_ALL_LINUX=yum install -y cmake3 gcc-toolset-12-gcc gcc-toolset-12-gcc-c++ scl-utils" >> "${GITHUB_ENV}"
+          echo "CIBW_CONTAINER_ENGINE=docker; create_args: -v ${GITHUB_WORKSPACE}/native-prefix:/opt/pycolmap-native:ro" >> "${GITHUB_ENV}"
+          echo "CIBW_ENVIRONMENT_LINUX=PATH=/opt/pycolmap-native/tools/bin:\$PATH CC=/opt/rh/gcc-toolset-12/root/usr/bin/gcc CXX=/opt/rh/gcc-toolset-12/root/usr/bin/g++ CMAKE_PREFIX_PATH=/opt/pycolmap-native/colmap:/opt/pycolmap-native/vcpkg_installed/x64-linux-release CMAKE_CUDA_ARCHITECTURES=89" >> "${GITHUB_ENV}"
+          echo "CIBW_TEST_SKIP=*" >> "${GITHUB_ENV}"
           if [[ "${{ matrix.cuda }}" == "true" ]]; then
-            echo "CIBW_MANYLINUX_X86_64_IMAGE=pytorch/manylinux2_28-builder:cuda12.9" >> "$GITHUB_ENV"
-            echo "CIBW_REPAIR_WHEEL_COMMAND=auditwheel repair --exclude 'libcudart*' --exclude 'libcurand*' -w {dest_dir} {wheel}" >> "$GITHUB_ENV"
+            echo "CIBW_REPAIR_WHEEL_COMMAND=auditwheel repair --exclude 'libcudart*' --exclude 'libcurand*' -w {dest_dir} {wheel}" >> "${GITHUB_ENV}"
             sed -i 's/^name = "pycolmap"$/name = "pycolmap-cuda12"/' pycolmap/pyproject.toml
             sed -i 's/^dependencies = \["numpy"\]$/dependencies = ["numpy", "cuda-toolkit[cudart,curand]>=12,<13"]/' pycolmap/pyproject.toml
             grep -F 'name = "pycolmap-cuda12"' pycolmap/pyproject.toml
             grep -F 'cuda-toolkit[cudart,curand]>=12,<13' pycolmap/pyproject.toml
           fi
-      - name: Configure macOS build
-        if: runner.os == 'macOS'
-        shell: bash
-        run: |
-          echo "CIBW_ARCHS_MACOS=arm64" >> "$GITHUB_ENV"
-          echo "VCPKG_TARGET_TRIPLET=arm64-osx-release" >> "$GITHUB_ENV"
-          echo "VCPKG_INSTALLATION_ROOT=/Users/runner/work/vcpkg" >> "$GITHUB_ENV"
-          echo "CMAKE_TOOLCHAIN_FILE=/Users/runner/work/vcpkg/scripts/buildsystems/vcpkg.cmake" >> "$GITHUB_ENV"
-          echo "CMAKE_OSX_ARCHITECTURES=arm64" >> "$GITHUB_ENV"
-          echo "ARCHFLAGS=-arch arm64" >> "$GITHUB_ENV"
-          echo "VCPKG_BINARY_SOURCES=clear;x-gha,readwrite" >> "$GITHUB_ENV"
-          echo "CIBW_CONFIG_SETTINGS=cmake.define.CMAKE_TOOLCHAIN_FILE=/Users/runner/work/vcpkg/scripts/buildsystems/vcpkg.cmake cmake.define.VCPKG_TARGET_TRIPLET=arm64-osx-release cmake.define.VCPKG_INSTALLED_DIR=${{ github.workspace }}/build/vcpkg_installed cmake.define.CMAKE_OSX_ARCHITECTURES=arm64 cmake.define.CMAKE_OSX_DEPLOYMENT_TARGET=15.0" >> "$GITHUB_ENV"
-      - name: Build wheels
+      - name: Build wheel
         uses: pypa/cibuildwheel@v4.1.0
         with:
           package-dir: ./pycolmap
           output-dir: wheelhouse
-      - name: Upload wheels
+      - name: Upload wheel
         uses: actions/upload-artifact@v7
         with:
           name: pycolmap-${{ matrix.platform }}
           path: wheelhouse/*.whl
           if-no-files-found: error
 
+  build-macos:
+    name: Build macos-arm64 wheel
+    needs: prepare-macos
+    runs-on: macos-15
+    timeout-minutes: 45
+    env:
+      NATIVE_PREFIX_DIR: /Users/runner/work/pycolmap-native
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Download native prefix
+        uses: actions/download-artifact@v8
+        with:
+          name: pycolmap-native-macos-arm64
+          path: ${{ runner.temp }}/pycolmap-native-archive
+      - name: Extract native prefix
+        run: |
+          set -euo pipefail
+          rm -rf "${NATIVE_PREFIX_DIR}"
+          mkdir -p "${NATIVE_PREFIX_DIR}"
+          tar -C "${NATIVE_PREFIX_DIR}" -xzf "${RUNNER_TEMP}/pycolmap-native-archive/pycolmap-native.tar.gz"
+          test -f "${NATIVE_PREFIX_DIR}/.complete"
+      - name: Install wheel build tools
+        run: HOMEBREW_NO_AUTO_UPDATE=1 brew install cmake ninja libomp
+      - name: Cache cibuildwheel downloads
+        uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/cibw-cache
+          key: pycolmap-cibw-v2-macos-arm64-4.1.0
+      - name: Build wheel
+        uses: pypa/cibuildwheel@v4.1.0
+        env:
+          CIBW_ARCHS_MACOS: arm64
+          CIBW_CACHE_PATH: ${{ runner.temp }}/cibw-cache
+          CIBW_CONFIG_SETTINGS: >-
+            cmake.define.CMAKE_OSX_ARCHITECTURES=arm64
+            cmake.define.CMAKE_OSX_DEPLOYMENT_TARGET=15.0
+          CIBW_ENVIRONMENT_MACOS: >-
+            CMAKE_PREFIX_PATH=/Users/runner/work/pycolmap-native/colmap:/Users/runner/work/pycolmap-native/vcpkg_installed/arm64-osx-release
+            MACOSX_DEPLOYMENT_TARGET=15.0
+            REPAIR_LIBRARY_PATH=/opt/homebrew/opt/libomp/lib
+          CIBW_TEST_SKIP: "*"
+        with:
+          package-dir: ./pycolmap
+          output-dir: wheelhouse
+      - name: Upload wheel
+        uses: actions/upload-artifact@v7
+        with:
+          name: pycolmap-macos-arm64
+          path: wheelhouse/*.whl
+          if-no-files-found: error
+
   test-linux:
     name: Test Linux wheel on Ubuntu ${{ matrix.ubuntu }}
-    needs: build
+    needs: build-linux
     strategy:
       fail-fast: false
       matrix:
@@ -173,13 +373,31 @@ jobs:
           version: ${{ env.UV_VERSION }}
       - name: Install and import the wheel
         run: |
-          uv venv --python 3.12
-          uv pip install wheelhouse/*.whl
-          uv run --no-project python -c "import pycolmap; print(pycolmap.__version__)"
+          uv venv --python 3.12 .test-venv
+          uv pip install --python .test-venv/bin/python wheelhouse/*.whl
+          .test-venv/bin/python -c "import pycolmap; print(pycolmap.__version__)"
+
+  test-stubs:
+    name: Validate generated type stubs
+    needs: build-linux
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: pycolmap-linux-x86_64
+          path: wheelhouse
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: ${{ env.UV_VERSION }}
+      - name: Run mypy against the installed wheel
+        run: |
+          uv venv --python 3.12 .test-venv
+          uv pip install --python .test-venv/bin/python wheelhouse/*.whl "mypy==1.12.1"
+          .test-venv/bin/python -m mypy --package pycolmap --implicit-optional
 
   test-macos:
     name: Test macOS wheel on macOS ${{ matrix.macos }}
-    needs: build
+    needs: build-macos
     strategy:
       fail-fast: false
       matrix:
@@ -195,13 +413,13 @@ jobs:
           version: ${{ env.UV_VERSION }}
       - name: Install and import the wheel
         run: |
-          uv venv --python 3.12
-          uv pip install wheelhouse/*.whl
-          uv run --no-project python -c "import pycolmap; print(pycolmap.__version__)"
+          uv venv --python 3.12 .test-venv
+          uv pip install --python .test-venv/bin/python wheelhouse/*.whl
+          .test-venv/bin/python -c "import pycolmap; print(pycolmap.__version__)"
 
   test-cuda-package:
     name: Test CUDA 12 package installation
-    needs: build
+    needs: build-linux
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/download-artifact@v8
@@ -213,13 +431,13 @@ jobs:
           version: ${{ env.UV_VERSION }}
       - name: Install and import the CUDA distribution
         run: |
-          uv venv --python 3.12
-          uv pip install wheelhouse/*.whl
-          uv run --no-project python -c "from importlib.metadata import version; import pycolmap; assert pycolmap.has_cuda; print(version('pycolmap-cuda12'), pycolmap.__version__)"
+          uv venv --python 3.12 .test-venv
+          uv pip install --python .test-venv/bin/python wheelhouse/*.whl
+          .test-venv/bin/python -c "from importlib.metadata import version; import pycolmap; assert pycolmap.has_cuda; print(version('pycolmap-cuda12'), pycolmap.__version__)"
 
   publish:
     name: Publish to CodeArtifact
-    needs: [build, test-linux, test-macos, test-cuda-package]
+    needs: [build-linux, build-macos, test-linux, test-stubs, test-macos, test-cuda-package]
     if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.publish)
     runs-on: [self-hosted, Linux, X64, aws]
     permissions:
@@ -227,7 +445,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v8
         with:
-          pattern: pycolmap-*
+          pattern: pycolmap-{linux,macos}-*
           path: wheelhouse
           merge-multiple: true
       - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
@@ -236,7 +454,7 @@ jobs:
       - name: Publish wheels
         shell: bash
         run: |
-          token="$(aws codeartifact get-authorization-token --domain "$CODEARTIFACT_DOMAIN" --domain-owner "$CODEARTIFACT_OWNER" --region "$CODEARTIFACT_REGION" --duration-seconds 0 --query authorizationToken --output text)"
-          publish_url="$(aws codeartifact get-repository-endpoint --domain "$CODEARTIFACT_DOMAIN" --domain-owner "$CODEARTIFACT_OWNER" --repository "$CODEARTIFACT_REPOSITORY" --format pypi --region "$CODEARTIFACT_REGION" --query repositoryEndpoint --output text)"
-          UV_PUBLISH_USERNAME=aws UV_PUBLISH_PASSWORD="$token" \
-            uv publish --publish-url "$publish_url" --check-url "${publish_url}simple/" wheelhouse/*.whl
+          token="$(aws codeartifact get-authorization-token --domain "${CODEARTIFACT_DOMAIN}" --domain-owner "${CODEARTIFACT_OWNER}" --region "${CODEARTIFACT_REGION}" --duration-seconds 0 --query authorizationToken --output text)"
+          publish_url="$(aws codeartifact get-repository-endpoint --domain "${CODEARTIFACT_DOMAIN}" --domain-owner "${CODEARTIFACT_OWNER}" --repository "${CODEARTIFACT_REPOSITORY}" --format pypi --region "${CODEARTIFACT_REGION}" --query repositoryEndpoint --output text)"
+          UV_PUBLISH_USERNAME=aws UV_PUBLISH_PASSWORD="${token}" \
+            uv publish --publish-url "${publish_url}" --check-url "${publish_url}simple/" wheelhouse/*.whl

@@ -26,6 +26,5 @@ void BindConstrainingPoint3D(py::module& m) {
       .def_readwrite("xyz", &ConstrainingPoint3D::xyz);
   MakeDataclass(PyConstrainingPoint3D);
 
-  py::bind_map<std::unordered_map<point3D_t, ConstrainingPoint3D>>(
-      m, "MapPoint3DIdToConstrainingPoint3D");
+  py::bind_map<ConstrainingPoint3DMap>(m, "MapPoint3DIdToConstrainingPoint3D");
 }
