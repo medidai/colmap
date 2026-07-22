@@ -138,7 +138,7 @@ jobs:
             "${{ matrix.image }}" \
             bash -c '
               if [[ "${BUILD_CUDA_ENABLED}" == "true" ]]; then
-                yum install -y libglvnd-devel
+                yum install -y libglvnd-devel mesa-libGLU-devel
               fi
               exec bash pycolmap/ci/install-colmap-almalinux.sh /opt/pycolmap-native
             '
@@ -328,7 +328,7 @@ jobs:
           echo "CIBW_ARCHS_LINUX=x86_64" >> "${GITHUB_ENV}"
           echo "CIBW_CACHE_PATH=${RUNNER_TEMP}/cibw-cache" >> "${GITHUB_ENV}"
           echo "CIBW_MANYLINUX_X86_64_IMAGE=${{ matrix.image }}" >> "${GITHUB_ENV}"
-          echo "CIBW_BEFORE_ALL_LINUX=yum install -y cmake3 gcc-toolset-12-gcc gcc-toolset-12-gcc-c++ libglvnd-devel scl-utils" >> "${GITHUB_ENV}"
+          echo "CIBW_BEFORE_ALL_LINUX=yum install -y cmake3 gcc-toolset-12-gcc gcc-toolset-12-gcc-c++ libglvnd-devel mesa-libGLU-devel scl-utils" >> "${GITHUB_ENV}"
           echo "CIBW_CONTAINER_ENGINE=docker; create_args: -v ${GITHUB_WORKSPACE}/native-prefix:/opt/pycolmap-native:ro" >> "${GITHUB_ENV}"
           echo "CIBW_ENVIRONMENT_LINUX=PATH=/opt/pycolmap-native/tools/bin:\$PATH CC=/opt/rh/gcc-toolset-12/root/usr/bin/gcc CXX=/opt/rh/gcc-toolset-12/root/usr/bin/g++ CMAKE_PREFIX_PATH=/opt/pycolmap-native/colmap:/opt/pycolmap-native/vcpkg_installed/x64-linux-release CMAKE_CUDA_ARCHITECTURES=89" >> "${GITHUB_ENV}"
           echo "CIBW_TEST_SKIP=*" >> "${GITHUB_ENV}"
