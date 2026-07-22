@@ -10,8 +10,12 @@ brew install git cmake ninja gfortran ccache
 
 sudo xcode-select --reset
 
-# When building lapack-reference, vcpkg/cmake looks for gfortran.
-ln -sf $(which gfortran-14) "$(dirname $(which gfortran-14))/gfortran"
+# When building lapack-reference, vcpkg/cmake looks for an unversioned gfortran.
+if ! command -v gfortran >/dev/null; then
+    GFORTRAN_PATH="$(find "$(brew --prefix)/bin" -maxdepth 1 -name 'gfortran-*' -print | sort | tail -n 1)"
+    test -n "$GFORTRAN_PATH"
+    sudo ln -sf "$GFORTRAN_PATH" "$(brew --prefix)/bin/gfortran"
+fi
 
 # Setup vcpkg
 git clone https://github.com/microsoft/vcpkg ${VCPKG_INSTALLATION_ROOT}
@@ -34,6 +38,7 @@ mkdir build && cd build
     -DCMAKE_TOOLCHAIN_FILE="${CMAKE_TOOLCHAIN_FILE}" \
     -DVCPKG_TARGET_TRIPLET="${VCPKG_TARGET_TRIPLET}" \
     -DCMAKE_OSX_ARCHITECTURES="${CMAKE_OSX_ARCHITECTURES}" \
+    -DCMAKE_OSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET}" \
     `if [[ ${CIBW_ARCHS_MACOS} == "arm64" ]]; then echo "-DSIMD_ENABLED=OFF"; fi`
 ninja
 sudo ninja install

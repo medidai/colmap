@@ -22,6 +22,15 @@ yum install -y \
 
 source scl_source enable gcc-toolset-12
 
+CUDA_HOME="/usr/local/cuda"
+if [ ! -d "${CUDA_HOME}" ] && [ -d "${CUDA_HOME}-12.9" ]; then
+    ln -s "${CUDA_HOME}-12.9" "${CUDA_HOME}"
+fi
+if [ -d "${CUDA_HOME}" ]; then
+    export PATH="${CUDA_HOME}/bin:${PATH}"
+    echo "${CUDA_HOME}/lib64" > /etc/ld.so.conf.d/cuda.conf
+fi
+
 # ccache shipped by CentOS is too old so we download and cache it.
 COMPILER_TOOLS_DIR="${CONTAINER_COMPILER_CACHE_DIR}/bin"
 mkdir -p ${COMPILER_TOOLS_DIR}
@@ -44,7 +53,8 @@ git checkout ${VCPKG_COMMIT_ID}
 cd ${CURRDIR}
 mkdir build && cd build
 cmake3 .. -GNinja \
-    -DCUDA_ENABLED=OFF \
+    -DCUDA_ENABLED="${BUILD_CUDA_ENABLED:-false}" \
+    -DCMAKE_CUDA_ARCHITECTURES=89 \
     -DGUI_ENABLED=OFF \
     -DCGAL_ENABLED=OFF \
     -DLSD_ENABLED=OFF \

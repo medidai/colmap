@@ -6,32 +6,40 @@ Stereo (MVS) pipeline.
 
 ## Installation
 
-Pre-built wheels for Linux, macOS, and Windows can be installed using pip:
+Medida publishes CPython 3.12 wheels for Linux x86-64 and macOS arm64 to the
+private `medida/python` CodeArtifact repository. Linux has separate `pycolmap`
+CPU and `pycolmap-cuda12` distributions; projects select one of them through
+their uv dependency groups.
+
+The Python project and its development tools are managed by uv. To prepare the
+locked tooling environment without building the native extension:
+
 ```bash
-pip install pycolmap
+cd pycolmap
+uv sync --no-install-project
 ```
 
-The wheels are automatically built and pushed to
-[PyPI](https://pypi.org/project/pycolmap/) at each release. They are currently
-not built with CUDA support, which requires building from source.
+Installing the project itself requires a compatible COLMAP installation. The
+release workflow builds COLMAP and the wheels in isolated cibuildwheel
+environments before publishing them to CodeArtifact.
 
 <details>
 <summary>[Building PyCOLMAP from source - click to expand]</summary>
 
 1. Install COLMAP from source following [the official guide](https://colmap.github.io/install.html).
 
-3. Build PyCOLMAP:
+2. Build PyCOLMAP:
   - On Linux and macOS:
 ```bash
 cd pycolmap
-python -m pip install .
+uv sync
 ```
   - On Windows, after installing COLMAP [via VCPKG](https://colmap.github.io/install.html#id3), run in powershell:
 ```powershell
 cd pycolmap
-python -m pip install . `
-    --cmake.define.CMAKE_TOOLCHAIN_FILE="$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" `
-    --cmake.define.VCPKG_TARGET_TRIPLET="x64-windows"
+uv sync `
+    --config-setting "cmake.define.CMAKE_TOOLCHAIN_FILE=$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" `
+    --config-setting "cmake.define.VCPKG_TARGET_TRIPLET=x64-windows"
 ```
 
 </details>

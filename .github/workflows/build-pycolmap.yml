@@ -1,199 +1,242 @@
-name: PyCOLMAP
+name: PyCOLMAP wheels
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 on:
   push:
-    branches:
-      - main
-      - release/*
+    branches: [main, "release/**"]
+    paths:
+      - ".github/workflows/build-pycolmap.yml"
+      - "CMakeLists.txt"
+      - "cmake/**"
+      - "pycolmap/**"
+      - "src/**"
+      - "vcpkg.json"
   pull_request:
-    types: [ assigned, opened, synchronize, reopened ]
+    paths:
+      - ".github/workflows/build-pycolmap.yml"
+      - "CMakeLists.txt"
+      - "cmake/**"
+      - "pycolmap/**"
+      - "src/**"
+      - "vcpkg.json"
   release:
-    types: [ published, edited ]
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish the wheels to AWS CodeArtifact
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+env:
+  CODEARTIFACT_DOMAIN: medida
+  CODEARTIFACT_OWNER: "697728436371"
+  CODEARTIFACT_REPOSITORY: python
+  CODEARTIFACT_REGION: us-east-1
+  UV_VERSION: 0.11.30
+  COMPILER_CACHE_DIR: ${{ github.workspace }}/compiler-cache
+  CCACHE_DIR: ${{ github.workspace }}/compiler-cache/ccache
+  CCACHE_MAXSIZE: 400M
+  MACOSX_DEPLOYMENT_TARGET: "15.0"
 
 jobs:
-  build:
-    name: ${{ matrix.config.os }} ${{ matrix.config.arch }}
-    runs-on: ${{ matrix.config.os }}
-    strategy:
-      matrix:
-        config: [
-              {os: ubuntu-latest},
-              {os: macos-13, arch: x86_64},
-              {os: macos-14, arch: arm64},
-              {os: windows-latest},
-        ]
-    env:
-      COMPILER_CACHE_VERSION: 1
-      COMPILER_CACHE_DIR: ${{ github.workspace }}/compiler-cache
-      CCACHE_DIR: ${{ github.workspace }}/compiler-cache/ccache
-      CCACHE_BASEDIR: ${{ github.workspace }}
-      MACOSX_DEPLOYMENT_TARGET: 10.15
-      # For faster builds in PRs, skip all but the latest Python versions.
-      PULL_REQUEST_CIBW_BUILD: cp38-{macosx,manylinux,win}*
+  validate:
+    name: Validate uv project
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: ${{ env.UV_VERSION }}
+      - name: Validate locked development environment
+        run: |
+          uv lock --directory pycolmap --check
+          uv sync --directory pycolmap --frozen --no-install-project
 
-      - name: Export GitHub Actions cache env
-        uses: actions/github-script@v7
+  build:
+    name: Build ${{ matrix.platform }}
+    needs: validate
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux-x86_64
+            runner: ubuntu-24.04
+            cuda: false
+          - platform: linux-x86_64-cuda12
+            runner: ubuntu-24.04
+            cuda: true
+          - platform: macos-arm64
+            runner: macos-15
+            cuda: false
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Free disk space for CUDA build
+        if: matrix.cuda
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Export GitHub Actions cache credentials
+        uses: actions/github-script@v8
         with:
           script: |
-            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
-            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
-
-      - uses: actions/cache@v4
-        id: cache-builds
+            core.exportVariable("ACTIONS_CACHE_URL", process.env.ACTIONS_CACHE_URL || "");
+            core.exportVariable("ACTIONS_RUNTIME_TOKEN", process.env.ACTIONS_RUNTIME_TOKEN || "");
+      - name: Restore compiler cache
+        uses: actions/cache@v6
         with:
-          key: pycolmap-v${{ env.COMPILER_CACHE_VERSION }}-${{ matrix.config.os }}-${{ matrix.config.arch }}-${{ github.run_id }}-${{ github.run_number }}
-          restore-keys: pycolmap-v${{ env.COMPILER_CACHE_VERSION }}-${{ matrix.config.os }}-${{ matrix.config.arch }}
-          path: ${{ env.COMPILER_CACHE_DIR }}
-
-      - name: Select Python
-        if: github.event_name == 'pull_request' && runner.os != 'Windows'
-        run: |
-          echo "CIBW_BUILD=${PULL_REQUEST_CIBW_BUILD}" >> "$GITHUB_ENV"
-      - name: Select Python
-        if: ${{ github.event_name == 'pull_request' && runner.os == 'Windows' }}
-        shell: pwsh
-        run: |
-          echo "CIBW_BUILD=${env:PULL_REQUEST_CIBW_BUILD}" >> "${env:GITHUB_ENV}"
-
-      - name: Set env (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          echo "ACTIONS_RUNTIME_TOKEN=${ACTIONS_RUNTIME_TOKEN}" >> "$GITHUB_ENV"
-          echo "ACTIONS_CACHE_URL=${ACTIONS_CACHE_URL}" >> "$GITHUB_ENV"
-
-          if [[ ${{ matrix.config.arch }} == "x86_64" ]]; then
-            VCPKG_TARGET_TRIPLET="x64-osx-release"
-          elif [[ ${{ matrix.config.arch }} == "arm64" ]]; then
-            VCPKG_TARGET_TRIPLET="arm64-osx-release"
-          else
-            exit 1
-          fi
-          echo "VCPKG_TARGET_TRIPLET=${VCPKG_TARGET_TRIPLET}" >> "$GITHUB_ENV"
-
-          VCPKG_INSTALLATION_ROOT="/Users/runner/work/vcpkg"
-          CMAKE_TOOLCHAIN_FILE="${VCPKG_INSTALLATION_ROOT}/scripts/buildsystems/vcpkg.cmake"
-          CMAKE_OSX_ARCHITECTURES=${{ matrix.config.arch }}
-          echo "VCPKG_INSTALLATION_ROOT=${VCPKG_INSTALLATION_ROOT}" >> "$GITHUB_ENV"
-          echo "CMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE}" >> "$GITHUB_ENV"
-          echo "CMAKE_OSX_ARCHITECTURES=${CMAKE_OSX_ARCHITECTURES}" >> "$GITHUB_ENV"
-          echo "ARCHFLAGS=-arch ${CMAKE_OSX_ARCHITECTURES}" >> "$GITHUB_ENV"
-
-          # Fix: cibuildhweel cannot interpolate env variables.
-          CONFIG_SETTINGS="cmake.define.CMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE}"
-          CONFIG_SETTINGS="${CONFIG_SETTINGS} cmake.define.VCPKG_TARGET_TRIPLET=${VCPKG_TARGET_TRIPLET}"
-          CONFIG_SETTINGS="${CONFIG_SETTINGS} cmake.define.VCPKG_INSTALLED_DIR=${{ github.workspace }}/build/vcpkg_installed"
-          CONFIG_SETTINGS="${CONFIG_SETTINGS} cmake.define.CMAKE_OSX_ARCHITECTURES=${CMAKE_OSX_ARCHITECTURES}"
-          echo "CIBW_CONFIG_SETTINGS_MACOS=${CONFIG_SETTINGS}" >> "$GITHUB_ENV"
-
-          # vcpkg binary caching
-          VCPKG_BINARY_SOURCES="clear;x-gha,readwrite"
-          echo "VCPKG_BINARY_SOURCES=${VCPKG_BINARY_SOURCES}" >> "$GITHUB_ENV"
-
-      - name: Set env (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          echo "ACTIONS_RUNTIME_TOKEN=${env:ACTIONS_RUNTIME_TOKEN}" >> "${env:GITHUB_ENV}"
-          echo "ACTIONS_CACHE_URL=${env:ACTIONS_CACHE_URL}" >> "${env:GITHUB_ENV}"
-
-          $VCPKG_INSTALLATION_ROOT = "${{ github.workspace }}/vcpkg"
-          echo "VCPKG_INSTALLATION_ROOT=${VCPKG_INSTALLATION_ROOT}" >> "${env:GITHUB_ENV}"
-          $CMAKE_TOOLCHAIN_FILE = "${VCPKG_INSTALLATION_ROOT}/scripts/buildsystems/vcpkg.cmake"
-          echo "CMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE}" >> "${env:GITHUB_ENV}"
-          $VCPKG_TARGET_TRIPLET = "x64-windows-release"
-          echo "VCPKG_TARGET_TRIPLET=${VCPKG_TARGET_TRIPLET}" >> "${env:GITHUB_ENV}"
-
-          # Fix: cibuildhweel cannot interpolate env variables.
-          $CMAKE_TOOLCHAIN_FILE = $CMAKE_TOOLCHAIN_FILE.replace('\', '/')
-          $VCPKG_INSTALLED_DIR = "${{ github.workspace }}/build/vcpkg_installed"
-          $VCPKG_INSTALLED_DIR = $VCPKG_INSTALLED_DIR.replace('\', '/')
-          $CONFIG_SETTINGS = "cmake.define.CMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE}"
-          $CONFIG_SETTINGS = "${CONFIG_SETTINGS} cmake.define.VCPKG_TARGET_TRIPLET=${VCPKG_TARGET_TRIPLET}"
-          $CONFIG_SETTINGS = "${CONFIG_SETTINGS} cmake.define.VCPKG_INSTALLED_DIR=${VCPKG_INSTALLED_DIR}"
-          echo "CIBW_CONFIG_SETTINGS_WINDOWS=${CONFIG_SETTINGS}" >> "${env:GITHUB_ENV}"
-          $CIBW_REPAIR_WHEEL_COMMAND = "delvewheel repair -v --add-path ${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/bin -w {dest_dir} {wheel}"
-          echo "CIBW_REPAIR_WHEEL_COMMAND_WINDOWS=${CIBW_REPAIR_WHEEL_COMMAND}" >> "${env:GITHUB_ENV}"
-
-          # vcpkg binary caching
-          $VCPKG_BINARY_SOURCES = "clear;x-gha,readwrite"
-          echo "VCPKG_BINARY_SOURCES=${VCPKG_BINARY_SOURCES}" >> "${env:GITHUB_ENV}"
-
-      - name: Set env (Linux)
+          path: compiler-cache
+          key: pycolmap-${{ matrix.platform }}-${{ github.sha }}
+          restore-keys: pycolmap-${{ matrix.platform }}-
+      - name: Configure Linux build
         if: runner.os == 'Linux'
+        shell: bash
         run: |
-          echo "ACTIONS_RUNTIME_TOKEN=${ACTIONS_RUNTIME_TOKEN}" >> "$GITHUB_ENV"
-          echo "ACTIONS_CACHE_URL=${ACTIONS_CACHE_URL}" >> "$GITHUB_ENV"
-
-          VCPKG_TARGET_TRIPLET="x64-linux-release"
-          echo "VCPKG_TARGET_TRIPLET=${VCPKG_TARGET_TRIPLET}" >> "$GITHUB_ENV"
-
-          VCPKG_INSTALLATION_ROOT="${{ github.workspace }}/vcpkg"
-          CMAKE_TOOLCHAIN_FILE="${VCPKG_INSTALLATION_ROOT}/scripts/buildsystems/vcpkg.cmake"
-          echo "VCPKG_INSTALLATION_ROOT=${VCPKG_INSTALLATION_ROOT}" >> "$GITHUB_ENV"
-          echo "CMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE}" >> "$GITHUB_ENV"
-
-          # Fix: cibuildhweel cannot interpolate env variables.
-          CONFIG_SETTINGS="cmake.define.CMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE}"
-          CONFIG_SETTINGS="${CONFIG_SETTINGS} cmake.define.VCPKG_TARGET_TRIPLET=${VCPKG_TARGET_TRIPLET}"
-          CONFIG_SETTINGS="${CONFIG_SETTINGS} cmake.define.VCPKG_INSTALLED_DIR=/project/build/vcpkg_installed"
-          echo "CIBW_CONFIG_SETTINGS_LINUX=${CONFIG_SETTINGS}" >> "$GITHUB_ENV"
-
-          # Remap caching paths to the container
-          CONTAINER_COMPILER_CACHE_DIR="/compiler-cache"
-          CIBW_CONTAINER_ENGINE="docker; create_args: -v ${COMPILER_CACHE_DIR}:${CONTAINER_COMPILER_CACHE_DIR}"
-          echo "CIBW_CONTAINER_ENGINE=${CIBW_CONTAINER_ENGINE}" >> "$GITHUB_ENV"
-          echo "CONTAINER_COMPILER_CACHE_DIR=${CONTAINER_COMPILER_CACHE_DIR}" >> "$GITHUB_ENV"
-          echo "CCACHE_DIR=${CONTAINER_COMPILER_CACHE_DIR}/ccache" >> "$GITHUB_ENV"
+          echo "CIBW_ARCHS_LINUX=x86_64" >> "$GITHUB_ENV"
+          echo "BUILD_CUDA_ENABLED=${{ matrix.cuda }}" >> "$GITHUB_ENV"
+          echo "CONTAINER_COMPILER_CACHE_DIR=/compiler-cache" >> "$GITHUB_ENV"
+          echo "CCACHE_DIR=/compiler-cache/ccache" >> "$GITHUB_ENV"
           echo "CCACHE_BASEDIR=/project" >> "$GITHUB_ENV"
-
-          # vcpkg binary caching
-          VCPKG_BINARY_SOURCES="clear;x-gha,readwrite"
-          echo "VCPKG_BINARY_SOURCES=${VCPKG_BINARY_SOURCES}" >> "$GITHUB_ENV"
-
-          CIBW_ENVIRONMENT_PASS_LINUX="ACTIONS_RUNTIME_TOKEN ACTIONS_CACHE_URL VCPKG_TARGET_TRIPLET VCPKG_INSTALLATION_ROOT CMAKE_TOOLCHAIN_FILE VCPKG_BINARY_SOURCES CONTAINER_COMPILER_CACHE_DIR CCACHE_DIR CCACHE_BASEDIR"
-          echo "CIBW_ENVIRONMENT_PASS_LINUX=${CIBW_ENVIRONMENT_PASS_LINUX}" >> "$GITHUB_ENV"
-
-          CIBW_MANYLINUX_X86_64_IMAGE="quay.io/pypa/manylinux_2_28_x86_64"
-          echo "CIBW_MANYLINUX_X86_64_IMAGE=${CIBW_MANYLINUX_X86_64_IMAGE}" >> "$GITHUB_ENV"
-
-      # See https://cibuildwheel.pypa.io/en/stable/faq/#macos-building-cpython-38-wheels-on-arm64
-      - name: Install ARM64 Python 3.8
-        uses: actions/setup-python@v5
-        with:
-          python-version: 3.8
-        if: runner.os == 'macOS' && runner.arch == 'ARM64' && ${{ matrix.config.arch }} == "arm64"
+          echo "VCPKG_TARGET_TRIPLET=x64-linux-release" >> "$GITHUB_ENV"
+          echo "VCPKG_INSTALLATION_ROOT=/project/vcpkg" >> "$GITHUB_ENV"
+          echo "CMAKE_TOOLCHAIN_FILE=/project/vcpkg/scripts/buildsystems/vcpkg.cmake" >> "$GITHUB_ENV"
+          echo "VCPKG_BINARY_SOURCES=clear;x-gha,readwrite" >> "$GITHUB_ENV"
+          echo "CIBW_ENVIRONMENT_PASS_LINUX=ACTIONS_CACHE_URL ACTIONS_RUNTIME_TOKEN BUILD_CUDA_ENABLED CCACHE_DIR CCACHE_BASEDIR CCACHE_MAXSIZE CONTAINER_COMPILER_CACHE_DIR VCPKG_TARGET_TRIPLET VCPKG_INSTALLATION_ROOT CMAKE_TOOLCHAIN_FILE VCPKG_BINARY_SOURCES" >> "$GITHUB_ENV"
+          echo "CIBW_CONFIG_SETTINGS=cmake.define.CMAKE_TOOLCHAIN_FILE=/project/vcpkg/scripts/buildsystems/vcpkg.cmake cmake.define.VCPKG_TARGET_TRIPLET=x64-linux-release cmake.define.VCPKG_INSTALLED_DIR=/project/build/vcpkg_installed" >> "$GITHUB_ENV"
+          echo "CIBW_CONTAINER_ENGINE=docker; create_args: -v ${{ github.workspace }}/compiler-cache:/compiler-cache" >> "$GITHUB_ENV"
+          if [[ "${{ matrix.cuda }}" == "true" ]]; then
+            echo "CIBW_MANYLINUX_X86_64_IMAGE=pytorch/manylinux2_28-builder:cuda12.9" >> "$GITHUB_ENV"
+            echo "CIBW_REPAIR_WHEEL_COMMAND=auditwheel repair --exclude 'libcudart*' --exclude 'libcurand*' -w {dest_dir} {wheel}" >> "$GITHUB_ENV"
+            sed -i 's/^name = "pycolmap"$/name = "pycolmap-cuda12"/' pycolmap/pyproject.toml
+            sed -i 's/^dependencies = \["numpy"\]$/dependencies = ["numpy", "cuda-toolkit[cudart,curand]>=12,<13"]/' pycolmap/pyproject.toml
+            grep -F 'name = "pycolmap-cuda12"' pycolmap/pyproject.toml
+            grep -F 'cuda-toolkit[cudart,curand]>=12,<13' pycolmap/pyproject.toml
+          fi
+      - name: Configure macOS build
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          echo "CIBW_ARCHS_MACOS=arm64" >> "$GITHUB_ENV"
+          echo "VCPKG_TARGET_TRIPLET=arm64-osx-release" >> "$GITHUB_ENV"
+          echo "VCPKG_INSTALLATION_ROOT=/Users/runner/work/vcpkg" >> "$GITHUB_ENV"
+          echo "CMAKE_TOOLCHAIN_FILE=/Users/runner/work/vcpkg/scripts/buildsystems/vcpkg.cmake" >> "$GITHUB_ENV"
+          echo "CMAKE_OSX_ARCHITECTURES=arm64" >> "$GITHUB_ENV"
+          echo "ARCHFLAGS=-arch arm64" >> "$GITHUB_ENV"
+          echo "VCPKG_BINARY_SOURCES=clear;x-gha,readwrite" >> "$GITHUB_ENV"
+          echo "CIBW_CONFIG_SETTINGS=cmake.define.CMAKE_TOOLCHAIN_FILE=/Users/runner/work/vcpkg/scripts/buildsystems/vcpkg.cmake cmake.define.VCPKG_TARGET_TRIPLET=arm64-osx-release cmake.define.VCPKG_INSTALLED_DIR=${{ github.workspace }}/build/vcpkg_installed cmake.define.CMAKE_OSX_ARCHITECTURES=arm64 cmake.define.CMAKE_OSX_DEPLOYMENT_TARGET=15.0" >> "$GITHUB_ENV"
       - name: Build wheels
-        uses: pypa/cibuildwheel@v2.21.3
+        uses: pypa/cibuildwheel@v4.1.0
         with:
-          package-dir: ./pycolmap/
-        env:
-          CIBW_ARCHS_MACOS: ${{ matrix.config.arch }}
-      - name: Archive wheels
-        uses: actions/upload-artifact@v4
+          package-dir: ./pycolmap
+          output-dir: wheelhouse
+      - name: Upload wheels
+        uses: actions/upload-artifact@v7
         with:
-          name: pycolmap-${{ matrix.config.os }}-${{ matrix.config.arch }}
-          path: wheelhouse/pycolmap-*.whl
+          name: pycolmap-${{ matrix.platform }}
+          path: wheelhouse/*.whl
+          if-no-files-found: error
 
-  pypi-publish:
-    name: Publish wheels to PyPI
+  test-linux:
+    name: Test Linux wheel on Ubuntu ${{ matrix.ubuntu }}
     needs: build
-    runs-on: ubuntu-latest
-    # We publish the wheel to pypi when a new tag is pushed,
-    # either by creating a new GitHub release or explictly with `git tag`
-    if: ${{ github.event_name == 'release' || startsWith(github.ref, 'refs/tags') }}
+    strategy:
+      fail-fast: false
+      matrix:
+        ubuntu: [22.04, 24.04]
+    runs-on: ubuntu-${{ matrix.ubuntu }}
     steps:
-      - name: Download wheels
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
-          path: ./artifacts/
-      - name: Move wheels
-        run: mkdir ./wheelhouse && mv ./artifacts/**/*.whl ./wheelhouse/
-      - name: Publish package
-        uses: pypa/gh-action-pypi-publish@release/v1
+          name: pycolmap-linux-x86_64
+          path: wheelhouse
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
-          skip-existing: true
-          user: __token__
-          password: ${{ secrets.PYPI_API_TOKEN }}
-          packages-dir: ./wheelhouse/
+          version: ${{ env.UV_VERSION }}
+      - name: Install and import the wheel
+        run: |
+          uv venv --python 3.12
+          uv pip install wheelhouse/*.whl
+          uv run --no-project python -c "import pycolmap; print(pycolmap.__version__)"
+
+  test-macos:
+    name: Test macOS wheel on macOS ${{ matrix.macos }}
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        macos: [15, 26]
+    runs-on: macos-${{ matrix.macos }}
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: pycolmap-macos-arm64
+          path: wheelhouse
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: ${{ env.UV_VERSION }}
+      - name: Install and import the wheel
+        run: |
+          uv venv --python 3.12
+          uv pip install wheelhouse/*.whl
+          uv run --no-project python -c "import pycolmap; print(pycolmap.__version__)"
+
+  test-cuda-package:
+    name: Test CUDA 12 package installation
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: pycolmap-linux-x86_64-cuda12
+          path: wheelhouse
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: ${{ env.UV_VERSION }}
+      - name: Install and import the CUDA distribution
+        run: |
+          uv venv --python 3.12
+          uv pip install wheelhouse/*.whl
+          uv run --no-project python -c "from importlib.metadata import version; import pycolmap; assert pycolmap.has_cuda; print(version('pycolmap-cuda12'), pycolmap.__version__)"
+
+  publish:
+    name: Publish to CodeArtifact
+    needs: [build, test-linux, test-macos, test-cuda-package]
+    if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.publish)
+    runs-on: [self-hosted, Linux, X64, aws]
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: pycolmap-*
+          path: wheelhouse
+          merge-multiple: true
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: ${{ env.UV_VERSION }}
+      - name: Publish wheels
+        shell: bash
+        run: |
+          token="$(aws codeartifact get-authorization-token --domain "$CODEARTIFACT_DOMAIN" --domain-owner "$CODEARTIFACT_OWNER" --region "$CODEARTIFACT_REGION" --duration-seconds 0 --query authorizationToken --output text)"
+          publish_url="$(aws codeartifact get-repository-endpoint --domain "$CODEARTIFACT_DOMAIN" --domain-owner "$CODEARTIFACT_OWNER" --repository "$CODEARTIFACT_REPOSITORY" --format pypi --region "$CODEARTIFACT_REGION" --query repositoryEndpoint --output text)"
+          UV_PUBLISH_USERNAME=aws UV_PUBLISH_PASSWORD="$token" \
+            uv publish --publish-url "$publish_url" --check-url "${publish_url}simple/" wheelhouse/*.whl
