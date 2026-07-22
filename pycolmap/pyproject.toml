@@ -41,6 +41,7 @@ dev = [
 
 [tool.scikit-build]
 wheel.expand-macos-universal-tags = true
+wheel.packages = ["pycolmap"]
 
 [tool.cibuildwheel]
 build = "cp312-{macosx,manylinux}*"
