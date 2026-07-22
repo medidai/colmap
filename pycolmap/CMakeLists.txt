@@ -61,6 +61,11 @@ pybind11_add_module(_core ${SOURCE_FILES})
 target_include_directories(_core PRIVATE ${PROJECT_SOURCE_DIR}/../src/)
 target_link_libraries(_core PRIVATE colmap::colmap glog::glog Ceres::ceres OpenMP::OpenMP_CXX OpenMP::OpenMP_C)
 target_compile_definitions(_core PRIVATE VERSION_INFO="${PROJECT_VERSION}")
+if(CUDA_ENABLED AND UNIX AND NOT APPLE)
+    set_target_properties(_core PROPERTIES
+        INSTALL_RPATH "$ORIGIN/../nvidia/cuda_runtime/lib;$ORIGIN/../nvidia/curand/lib"
+    )
+endif()
 install(TARGETS _core LIBRARY DESTINATION pycolmap)
 
 if(GENERATE_STUBS AND UNIX)
