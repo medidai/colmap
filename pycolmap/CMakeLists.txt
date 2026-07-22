@@ -34,6 +34,13 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /MP")
 endif()
 
+find_package(gflags CONFIG REQUIRED)
+# vcpkg exports Ceres and glog with different gflags target names.
+if(TARGET gflags AND NOT TARGET gflags::gflags)
+    add_library(gflags::gflags ALIAS gflags)
+elseif(TARGET gflags::gflags AND NOT TARGET gflags)
+    add_library(gflags ALIAS gflags::gflags)
+endif()
 find_package(colmap REQUIRED)
 find_package(OpenMP REQUIRED)
 
