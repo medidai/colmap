@@ -144,7 +144,7 @@ jobs:
             '
       - name: Complete native CMake package
         run: |
-          install -m 0644 \
+          sudo install -m 0644 \
             native-prefix/vcpkg_installed/x64-linux-release/share/jxr/FindJXR.cmake \
             native-prefix/colmap/share/colmap/cmake/FindJXR.cmake
       - name: Validate and archive native prefix
