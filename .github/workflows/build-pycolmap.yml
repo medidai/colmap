@@ -146,7 +146,8 @@ jobs:
         run: |
           sudo install -m 0644 \
             native-prefix/vcpkg_installed/x64-linux-release/share/jxr/FindJXR.cmake \
-            native-prefix/colmap/share/colmap/cmake/FindJXR.cmake
+            native-prefix/vcpkg_installed/x64-linux-release/share/libraw/FindLibRaw.cmake \
+            native-prefix/colmap/share/colmap/cmake/
       - name: Validate and archive native prefix
         run: |
           set -euo pipefail
@@ -238,7 +239,8 @@ jobs:
         run: |
           install -m 0644 \
             "${NATIVE_PREFIX_DIR}/vcpkg_installed/arm64-osx-release/share/jxr/FindJXR.cmake" \
-            "${NATIVE_PREFIX_DIR}/colmap/share/colmap/cmake/FindJXR.cmake"
+            "${NATIVE_PREFIX_DIR}/vcpkg_installed/arm64-osx-release/share/libraw/FindLibRaw.cmake" \
+            "${NATIVE_PREFIX_DIR}/colmap/share/colmap/cmake/"
       - name: Validate and archive native prefix
         run: |
           set -euo pipefail
