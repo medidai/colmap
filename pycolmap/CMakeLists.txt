@@ -34,6 +34,9 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /MP")
 endif()
 
+# vcpkg's FreeImage config omits its lcms2 dependency.
+find_package(lcms2 CONFIG REQUIRED)
+
 find_package(gflags CONFIG REQUIRED)
 # vcpkg exports Ceres and glog with different gflags target names.
 if(TARGET gflags AND NOT TARGET gflags::gflags)

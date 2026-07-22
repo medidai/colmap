@@ -239,8 +239,7 @@ jobs:
         run: |
           install -m 0644 \
             "${NATIVE_PREFIX_DIR}/vcpkg_installed/arm64-osx-release/share/jxr/FindJXR.cmake" \
-            "${NATIVE_PREFIX_DIR}/vcpkg_installed/arm64-osx-release/share/libraw/FindLibRaw.cmake" \
-            "${NATIVE_PREFIX_DIR}/colmap/share/colmap/cmake/"
+            "${NATIVE_PREFIX_DIR}/colmap/share/colmap/cmake/FindJXR.cmake"
       - name: Validate and archive native prefix
         run: |
           set -euo pipefail
