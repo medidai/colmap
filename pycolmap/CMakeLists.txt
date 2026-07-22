@@ -35,7 +35,6 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
 endif()
 
 find_package(colmap REQUIRED)
-find_package(PoseLib REQUIRED)
 find_package(OpenMP REQUIRED)
 
 if (CMAKE_VERSION VERSION_LESS 3.18)
@@ -50,7 +49,7 @@ find_package(pybind11 2.13.0 REQUIRED)
 file(GLOB_RECURSE SOURCE_FILES "${PROJECT_SOURCE_DIR}/../src/pycolmap/*.cc")
 pybind11_add_module(_core ${SOURCE_FILES})
 target_include_directories(_core PRIVATE ${PROJECT_SOURCE_DIR}/../src/)
-target_link_libraries(_core PRIVATE colmap::colmap glog::glog Ceres::ceres PoseLib::PoseLib OpenMP::OpenMP_CXX OpenMP::OpenMP_C)
+target_link_libraries(_core PRIVATE colmap::colmap glog::glog Ceres::ceres OpenMP::OpenMP_CXX OpenMP::OpenMP_C)
 target_compile_definitions(_core PRIVATE VERSION_INFO="${PROJECT_VERSION}")
 install(TARGETS _core LIBRARY DESTINATION pycolmap)
 
