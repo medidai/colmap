@@ -136,7 +136,17 @@ jobs:
             --env VCPKG_COMMIT_ID \
             --env VCPKG_TARGET_TRIPLET=x64-linux-release \
             "${{ matrix.image }}" \
-            bash pycolmap/ci/install-colmap-almalinux.sh /opt/pycolmap-native
+            bash -c '
+              if [[ "${BUILD_CUDA_ENABLED}" == "true" ]]; then
+                yum install -y libglvnd-devel
+              fi
+              exec bash pycolmap/ci/install-colmap-almalinux.sh /opt/pycolmap-native
+            '
+      - name: Complete native CMake package
+        run: |
+          install -m 0644 \
+            native-prefix/vcpkg_installed/x64-linux-release/share/jxr/FindJXR.cmake \
+            native-prefix/colmap/share/colmap/cmake/FindJXR.cmake
       - name: Validate and archive native prefix
         run: |
           set -euo pipefail
@@ -163,7 +173,7 @@ jobs:
       - name: Clean native build scratch
         if: always()
         run: |
-          rm -rf \
+          sudo rm -rf \
             native-cache/colmap-build \
             native-cache/vcpkg/buildtrees \
             native-cache/vcpkg/downloads \
@@ -224,6 +234,11 @@ jobs:
           rm -rf "${NATIVE_PREFIX_DIR}"
           mkdir -p "${NATIVE_PREFIX_DIR}" "${NATIVE_CACHE_DIR}"
           bash pycolmap/ci/install-colmap-macos.sh "${NATIVE_PREFIX_DIR}"
+      - name: Complete native CMake package
+        run: |
+          install -m 0644 \
+            "${NATIVE_PREFIX_DIR}/vcpkg_installed/arm64-osx-release/share/jxr/FindJXR.cmake" \
+            "${NATIVE_PREFIX_DIR}/colmap/share/colmap/cmake/FindJXR.cmake"
       - name: Validate and archive native prefix
         run: |
           set -euo pipefail
@@ -313,7 +328,7 @@ jobs:
           echo "CIBW_ARCHS_LINUX=x86_64" >> "${GITHUB_ENV}"
           echo "CIBW_CACHE_PATH=${RUNNER_TEMP}/cibw-cache" >> "${GITHUB_ENV}"
           echo "CIBW_MANYLINUX_X86_64_IMAGE=${{ matrix.image }}" >> "${GITHUB_ENV}"
-          echo "CIBW_BEFORE_ALL_LINUX=yum install -y cmake3 gcc-toolset-12-gcc gcc-toolset-12-gcc-c++ scl-utils" >> "${GITHUB_ENV}"
+          echo "CIBW_BEFORE_ALL_LINUX=yum install -y cmake3 gcc-toolset-12-gcc gcc-toolset-12-gcc-c++ libglvnd-devel scl-utils" >> "${GITHUB_ENV}"
           echo "CIBW_CONTAINER_ENGINE=docker; create_args: -v ${GITHUB_WORKSPACE}/native-prefix:/opt/pycolmap-native:ro" >> "${GITHUB_ENV}"
           echo "CIBW_ENVIRONMENT_LINUX=PATH=/opt/pycolmap-native/tools/bin:\$PATH CC=/opt/rh/gcc-toolset-12/root/usr/bin/gcc CXX=/opt/rh/gcc-toolset-12/root/usr/bin/g++ CMAKE_PREFIX_PATH=/opt/pycolmap-native/colmap:/opt/pycolmap-native/vcpkg_installed/x64-linux-release CMAKE_CUDA_ARCHITECTURES=89" >> "${GITHUB_ENV}"
           echo "CIBW_TEST_SKIP=*" >> "${GITHUB_ENV}"
