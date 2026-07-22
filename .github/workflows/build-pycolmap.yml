@@ -97,11 +97,14 @@ jobs:
         with:
           persist-credentials: false
       - name: Restore native build cache
-        uses: actions/cache@v6
+        id: native-build-cache
+        uses: actions/cache/restore@v6
         with:
           path: native-cache
-          key: pycolmap-native-cache-v2-${{ matrix.abi }}-${{ env.VCPKG_COMMIT_ID }}-${{ github.sha }}
-          restore-keys: pycolmap-native-cache-v2-${{ matrix.abi }}-${{ env.VCPKG_COMMIT_ID }}-
+          key: pycolmap-native-cache-v3-${{ matrix.abi }}-${{ env.VCPKG_COMMIT_ID }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            pycolmap-native-cache-v3-${{ matrix.abi }}-${{ env.VCPKG_COMMIT_ID }}-${{ github.sha }}-
+            pycolmap-native-cache-v3-${{ matrix.abi }}-${{ env.VCPKG_COMMIT_ID }}-
       - name: Restore native prefix
         id: prefix-cache
         uses: actions/cache@v6
@@ -157,6 +160,20 @@ jobs:
             native-cache/vcpkg/buildtrees/**/*.log
           if-no-files-found: warn
           retention-days: 3
+      - name: Clean native build scratch
+        if: always()
+        run: |
+          rm -rf \
+            native-cache/colmap-build \
+            native-cache/vcpkg/buildtrees \
+            native-cache/vcpkg/downloads \
+            native-cache/vcpkg/packages
+      - name: Save native build cache
+        if: ${{ always() && steps.native-build-cache.outcome == 'success' }}
+        uses: actions/cache/save@v6
+        with:
+          path: native-cache
+          key: pycolmap-native-cache-v3-${{ matrix.abi }}-${{ env.VCPKG_COMMIT_ID }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
 
   prepare-macos:
     name: Prepare native prefix macos-arm64
@@ -180,11 +197,14 @@ jobs:
           echo "toolchain=$(printf '%s' "${formulae}" | shasum -a 256 | cut -d ' ' -f 1)" >> "${GITHUB_OUTPUT}"
           echo "runner=${ImageVersion}" >> "${GITHUB_OUTPUT}"
       - name: Restore native build cache
-        uses: actions/cache@v6
+        id: native-build-cache
+        uses: actions/cache/restore@v6
         with:
           path: native-cache
-          key: pycolmap-native-cache-v2-macos-arm64-${{ steps.native-abi.outputs.runner }}-${{ steps.native-abi.outputs.toolchain }}-${{ env.VCPKG_COMMIT_ID }}-${{ github.sha }}
-          restore-keys: pycolmap-native-cache-v2-macos-arm64-${{ steps.native-abi.outputs.runner }}-${{ steps.native-abi.outputs.toolchain }}-${{ env.VCPKG_COMMIT_ID }}-
+          key: pycolmap-native-cache-v3-macos-arm64-${{ steps.native-abi.outputs.runner }}-${{ steps.native-abi.outputs.toolchain }}-${{ env.VCPKG_COMMIT_ID }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            pycolmap-native-cache-v3-macos-arm64-${{ steps.native-abi.outputs.runner }}-${{ steps.native-abi.outputs.toolchain }}-${{ env.VCPKG_COMMIT_ID }}-${{ github.sha }}-
+            pycolmap-native-cache-v3-macos-arm64-${{ steps.native-abi.outputs.runner }}-${{ steps.native-abi.outputs.toolchain }}-${{ env.VCPKG_COMMIT_ID }}-
       - name: Restore native prefix
         id: prefix-cache
         uses: actions/cache@v6
@@ -227,6 +247,20 @@ jobs:
             native-cache/vcpkg/buildtrees/**/*.log
           if-no-files-found: warn
           retention-days: 3
+      - name: Clean native build scratch
+        if: always()
+        run: |
+          rm -rf \
+            native-cache/colmap-build \
+            native-cache/vcpkg/buildtrees \
+            native-cache/vcpkg/downloads \
+            native-cache/vcpkg/packages
+      - name: Save native build cache
+        if: ${{ always() && steps.native-build-cache.outcome == 'success' }}
+        uses: actions/cache/save@v6
+        with:
+          path: native-cache
+          key: pycolmap-native-cache-v3-macos-arm64-${{ steps.native-abi.outputs.runner }}-${{ steps.native-abi.outputs.toolchain }}-${{ env.VCPKG_COMMIT_ID }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
 
   build-linux:
     name: Build ${{ matrix.platform }} wheel
