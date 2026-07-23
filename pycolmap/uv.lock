@@ -168,7 +168,7 @@ wheels = [
 
 [[package]]
 name = "pycolmap"
-version = "3.12.0.dev0"
+version = "3.12.0"
 source = { editable = "." }
 dependencies = [
     { name = "numpy" },
