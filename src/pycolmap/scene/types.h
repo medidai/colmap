@@ -1,6 +1,7 @@
 #pragma once
 
 #include "colmap/scene/camera.h"
+#include "colmap/scene/constraining_point3d.h"
 #include "colmap/scene/image.h"
 #include "colmap/scene/point2d.h"
 #include "colmap/scene/point3d.h"
@@ -23,3 +24,7 @@ PYBIND11_MAKE_OPAQUE(CameraMap);
 
 using Point3DMap = std::unordered_map<point3D_t, Point3D>;
 PYBIND11_MAKE_OPAQUE(Point3DMap);
+
+using ConstrainingPoint3DMap =
+    std::unordered_map<point3D_t, ConstrainingPoint3D>;
+PYBIND11_MAKE_OPAQUE(ConstrainingPoint3DMap);

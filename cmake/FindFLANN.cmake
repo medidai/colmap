@@ -49,6 +49,22 @@ unset(FLANN_FOUND)
 unset(FLANN_INCLUDE_DIRS)
 unset(FLANN_LIBRARIES)
 
+find_package(flann CONFIG QUIET)
+if(TARGET flann::flann_cpp_s)
+    set(FLANN_TARGET flann::flann_cpp_s)
+elseif(TARGET flann::flann_cpp)
+    set(FLANN_TARGET flann::flann_cpp)
+endif()
+
+if(FLANN_TARGET)
+    set(FLANN_FOUND TRUE)
+    set(FLANN_LIBRARIES ${FLANN_TARGET})
+    add_library(flann INTERFACE IMPORTED)
+    target_link_libraries(flann INTERFACE ${FLANN_TARGET})
+    message(STATUS "Found FLANN: ${FLANN_TARGET}")
+    return()
+endif()
+
 list(APPEND FLANN_CHECK_INCLUDE_DIRS
     ${FLANN_INCLUDE_DIR_HINTS}
     /usr/include

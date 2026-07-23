@@ -14,7 +14,7 @@ name = "pycolmap"
 # WARNING: This version must follow the MAJOR.MINOR.PATCH format. If only
 # MAJOR.MINOR is used, cibuildwheel will add a .dev0 patch version, which
 # results in releasing a pre-release version on PyPI.
-version = "3.12.0.dev0"
+version = "3.12.0"
 description = "COLMAP bindings"
 readme = "README.md"
 authors = [
@@ -26,32 +26,34 @@ authors = [
 ]
 license = {text = "BSD-3-Clause"}
 urls = {Repository = "https://github.com/colmap/colmap"}
-requires-python = ">=3.8"
+requires-python = ">=3.12,<3.13"
 dependencies = ["numpy"]
 classifiers = [
   "License :: OSI Approved :: BSD License",
   "Programming Language :: Python :: 3 :: Only",
 ]
 
+[dependency-groups]
+dev = [
+  "cibuildwheel==4.1.0",
+  "mypy==1.12.1",
+]
+
 [tool.scikit-build]
 wheel.expand-macos-universal-tags = true
+wheel.packages = ["pycolmap"]
 
 [tool.cibuildwheel]
-build = "cp3{8,9,10,11,12}-{macosx,manylinux,win}*"
-archs = ["auto64"]
+build = "cp312-{macosx,manylinux}*"
 test-requires = "mypy==1.12.1"
 test-command = "python -c \"import pycolmap; print(pycolmap.__version__)\" &&  python -m mypy --package pycolmap --implicit-optional"
 
 [tool.cibuildwheel.environment]
-VCPKG_COMMIT_ID = "10b7a178346f3f0abef60cecd5130e295afd8da4"
+VCPKG_COMMIT_ID = "cd61e1e26a038e82d6550a3ebbe0fbbfe7da78e3"
 
 [tool.cibuildwheel.linux]
-before-all = "{package}/ci/install-colmap-almalinux.sh"
+archs = ["x86_64"]
+manylinux-x86_64-image = "manylinux_2_28"
 
 [tool.cibuildwheel.macos]
-before-all = "{package}/ci/install-colmap-macos.sh"
-
-[tool.cibuildwheel.windows]
-before-all = "powershell -File {package}/ci/install-colmap-windows.ps1"
-before-build = "pip install delvewheel"
-test-command = "powershell -File {package}/ci/test-colmap-windows.ps1"
+archs = ["arm64"]
