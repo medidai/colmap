@@ -340,7 +340,7 @@ jobs:
           echo "CIBW_TEST_SKIP=*" >> "${GITHUB_ENV}"
           if [[ "${{ matrix.cuda }}" == "true" ]]; then
             echo "CIBW_REPAIR_WHEEL_COMMAND=auditwheel repair --exclude 'libcudart*' --exclude 'libcurand*' -w {dest_dir} {wheel}" >> "${GITHUB_ENV}"
-            uv run --with tomlkit python python/ci/update_pyproject_toml.py --name pycolmap-cuda12 --add-deps "cuda-toolkit[cudart,curand]>=12,<13"
+            uv run --no-project --with tomlkit python python/ci/update_pyproject_toml.py --name pycolmap-cuda12 --add-deps "cuda-toolkit[cudart,curand]>=12,<13"
             grep -F 'name = "pycolmap-cuda12"' pyproject.toml
             grep -F 'cuda-toolkit[cudart,curand]>=12,<13' pyproject.toml
           fi

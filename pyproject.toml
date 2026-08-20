@@ -55,12 +55,10 @@ test-command = "python -c \"import pycolmap; print(pycolmap.__version__)\" && py
 VCPKG_COMMIT_ID = "cd61e1e26a038e82d6550a3ebbe0fbbfe7da78e3"
 
 [tool.cibuildwheel.linux]
-before-all = "{project}/python/ci/install-colmap-almalinux.sh"
 archs = ["x86_64"]
 manylinux-x86_64-image = "manylinux_2_28"
 
 [tool.cibuildwheel.macos]
-before-all = "{project}/python/ci/install-colmap-macos.sh"
 archs = ["arm64"]
 
 [tool.pytest.ini_options]
