@@ -93,19 +93,32 @@ target_include_directories(_core PRIVATE ${PROJECT_SOURCE_DIR}/../src/)
 target_link_libraries(_core PRIVATE colmap::colmap glog::glog Ceres::ceres)
 target_compile_definitions(_core PRIVATE VERSION_INFO="${PROJECT_VERSION}")
 
-# Set rpath to find ONNX Runtime library at runtime.
+# Set rpath to find ONNX Runtime and (on Linux CUDA wheels) the
+# cuda-toolkit Python package libraries at runtime.
+set(_CORE_BUILD_RPATH "")
+set(_CORE_INSTALL_RPATH "")
 if(ONNX_RPATH)
     if(APPLE)
-        set_target_properties(_core PROPERTIES
-            BUILD_RPATH "${ONNX_RPATH}"
-            INSTALL_RPATH "${ONNX_RPATH}"
-        )
+        set(_CORE_BUILD_RPATH "${ONNX_RPATH}")
+        set(_CORE_INSTALL_RPATH "${ONNX_RPATH}")
     elseif(UNIX)
-        set_target_properties(_core PROPERTIES
-            BUILD_RPATH "${ONNX_RPATH}"
-            INSTALL_RPATH "$ORIGIN/../lib:${ONNX_RPATH}"
-        )
+        set(_CORE_BUILD_RPATH "${ONNX_RPATH}")
+        set(_CORE_INSTALL_RPATH "$ORIGIN/../lib:${ONNX_RPATH}")
     endif()
+endif()
+if(CUDA_ENABLED AND UNIX AND NOT APPLE)
+    set(_CUDA_WHEEL_RPATH "$ORIGIN/../nvidia/cuda_runtime/lib;$ORIGIN/../nvidia/curand/lib")
+    if(_CORE_INSTALL_RPATH)
+        set(_CORE_INSTALL_RPATH "${_CORE_INSTALL_RPATH};${_CUDA_WHEEL_RPATH}")
+    else()
+        set(_CORE_INSTALL_RPATH "${_CUDA_WHEEL_RPATH}")
+    endif()
+endif()
+if(_CORE_INSTALL_RPATH OR _CORE_BUILD_RPATH)
+    set_target_properties(_core PROPERTIES
+        BUILD_RPATH "${_CORE_BUILD_RPATH}"
+        INSTALL_RPATH "${_CORE_INSTALL_RPATH}"
+    )
 endif()
 
 install(TARGETS _core LIBRARY DESTINATION pycolmap)
