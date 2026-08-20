@@ -511,6 +511,8 @@ void OptionManager::AddBundleAdjustmentOptions() {
                    &bundle_adjustment->refine_sensor_from_rig);
   AddDefaultOption("BundleAdjustment.refine_points3D",
                    &bundle_adjustment->refine_points3D);
+  AddDefaultOption("BundleAdjustment.apply_constraints",
+                   &bundle_adjustment->apply_constraints);
   AddDefaultOption("BundleAdjustment.constant_rig_from_world_rotation",
                    &bundle_adjustment->constant_rig_from_world_rotation);
   AddDefaultOption("BundleAdjustment.min_track_length",
@@ -624,6 +626,8 @@ void OptionManager::AddMapperOptions() {
                    &mapper->ba_refine_extra_params);
   AddDefaultOption("Mapper.ba_refine_sensor_from_rig",
                    &mapper->ba_refine_sensor_from_rig);
+  AddDefaultOption("Mapper.ba_apply_constraints",
+                   &mapper->ba_apply_constraints);
   AddDefaultOption("Mapper.ba_local_function_tolerance",
                    &mapper->ba_local_function_tolerance);
   AddDefaultOption("Mapper.ba_local_max_num_iterations",

@@ -27,6 +27,7 @@ void BindCorrespondenceGraph(py::module& m);
 void BindDatabase(py::module& m);
 void BindDatabaseCache(py::module& m);
 void BindPoint3D(py::module& m);
+void BindConstrainingPoint3D(py::module& m);
 void BindSceneRig(py::module& m);
 void BindReconstruction(py::module& m);
 void BindReconstructionManager(py::module& m);
@@ -37,6 +38,7 @@ void BindPoseGraph(py::module& m);
 void BindScene(py::module& m) {
   BindTrack(m);
   BindPoint3D(m);
+  BindConstrainingPoint3D(m);
   BindCorrespondenceGraph(m);
   BindDatabase(m);
   BindDatabaseCache(m);

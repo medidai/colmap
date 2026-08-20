@@ -44,6 +44,7 @@
 #include <cmath>
 #include <fstream>
 #include <iterator>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -539,12 +540,57 @@ void ReadMedidaObservationWeightsBinary(Reconstruction& reconstruction,
     }
   }
   THROW_CHECK(file.good());
+
+  if (file.peek() == std::char_traits<char>::eof()) {
+    return;
+  }
+
+  const uint64_t num_constraining_points =
+      ReadBinaryLittleEndian<uint64_t>(&file);
+  for (uint64_t i = 0; i < num_constraining_points; ++i) {
+    const point3D_t point3D_id = ReadBinaryLittleEndian<point3D_t>(&file);
+    Eigen::Vector3d xyz;
+    xyz.x() = ReadBinaryLittleEndian<double>(&file);
+    xyz.y() = ReadBinaryLittleEndian<double>(&file);
+    xyz.z() = ReadBinaryLittleEndian<double>(&file);
+    reconstruction.AddConstrainingPoint3D(point3D_id, ConstrainingPoint3D(xyz));
+  }
+
+  const uint64_t num_constraint_images =
+      ReadBinaryLittleEndian<uint64_t>(&file);
+  for (uint64_t i = 0; i < num_constraint_images; ++i) {
+    const image_t image_id = ReadBinaryLittleEndian<image_t>(&file);
+    const uint64_t num_points2D = ReadBinaryLittleEndian<uint64_t>(&file);
+    THROW_CHECK(reconstruction.ExistsImage(image_id))
+        << sidecar_path << " constraint list references unknown image "
+        << image_id;
+    Image& image = reconstruction.Image(image_id);
+    THROW_CHECK_EQ(num_points2D, image.NumPoints2D())
+        << sidecar_path << " constraint count mismatch for image " << image_id;
+    for (point2D_t point2D_idx = 0; point2D_idx < num_points2D; ++point2D_idx) {
+      const point3D_t constraint_id =
+          ReadBinaryLittleEndian<point3D_t>(&file);
+      if (constraint_id == kInvalidPoint3DId) {
+        image.Point2D(point2D_idx).constraint_point_id = std::nullopt;
+      } else {
+        THROW_CHECK(reconstruction.ExistsConstrainingPoint3D(constraint_id))
+            << sidecar_path << " observation references unknown constraining "
+                               "point "
+            << constraint_id;
+        image.Point2D(point2D_idx).constraint_point_id = constraint_id;
+      }
+    }
+  }
+  THROW_CHECK(file.good());
+  THROW_CHECK_EQ(file.peek(), std::char_traits<char>::eof())
+      << sidecar_path << " contains an unsupported trailing section";
 }
 
 void WriteMedidaObservationWeightsBinary(const Reconstruction& reconstruction,
                                          const std::filesystem::path& path) {
   const auto sidecar_path = path / kMedidaSparseSidecarFilename;
-  if (!reconstruction.HasNonUnitObservationWeights()) {
+  if (!reconstruction.HasNonUnitObservationWeights() &&
+      !reconstruction.HasConstraints()) {
     if (ExistsFile(sidecar_path)) {
       std::filesystem::remove(sidecar_path);
     }
@@ -568,6 +614,33 @@ void WriteMedidaObservationWeightsBinary(const Reconstruction& reconstruction,
     for (const Point2D& point2D : image.Points2D()) {
       CheckObservationWeight(point2D.weight);
       WriteBinaryLittleEndian<float>(&file, point2D.weight);
+    }
+  }
+
+  WriteBinaryLittleEndian<uint64_t>(&file,
+                                    reconstruction.NumConstrainingPoints3D());
+  for (const auto& [point3D_id, point3D] :
+       reconstruction.ConstrainingPoints3D()) {
+    WriteBinaryLittleEndian<point3D_t>(&file, point3D_id);
+    WriteBinaryLittleEndian<double>(&file, point3D.xyz.x());
+    WriteBinaryLittleEndian<double>(&file, point3D.xyz.y());
+    WriteBinaryLittleEndian<double>(&file, point3D.xyz.z());
+  }
+
+  WriteBinaryLittleEndian<uint64_t>(&file, reconstruction.NumImages());
+  for (const auto& [image_id, image] : reconstruction.Images()) {
+    WriteBinaryLittleEndian<image_t>(&file, image_id);
+    WriteBinaryLittleEndian<uint64_t>(&file, image.NumPoints2D());
+    for (const Point2D& point2D : image.Points2D()) {
+      if (point2D.constraint_point_id.has_value()) {
+        THROW_CHECK(
+            reconstruction.ExistsConstrainingPoint3D(*point2D.constraint_point_id))
+            << "Image " << image_id << " references unknown constraining point "
+            << *point2D.constraint_point_id;
+      }
+      const point3D_t constraint_id = point2D.constraint_point_id.value_or(
+          kInvalidPoint3DId);
+      WriteBinaryLittleEndian<point3D_t>(&file, constraint_id);
     }
   }
 }

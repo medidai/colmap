@@ -41,6 +41,8 @@
 
 #include <filesystem>
 #include <mutex>
+#include <optional>
+#include <unordered_map>
 #include <vector>
 
 #include <Eigen/Core>
@@ -179,6 +181,14 @@ class Database {
   virtual std::vector<float> ReadObservationWeights(image_t image_id) const {
     return {};
   }
+  virtual std::vector<std::optional<point3D_t>> ReadObservationConstraints(
+      image_t image_id) const {
+    return {};
+  }
+  virtual std::unordered_map<point3D_t, Eigen::Vector3d>
+  ReadConstrainingPoints3D() const {
+    return {};
+  }
 
   virtual FeatureMatchesBlob ReadMatchesBlob(image_t image_id1,
                                              image_t image_id2) const = 0;
@@ -234,6 +244,22 @@ class Database {
     if (!weights.empty()) {
       LOG(FATAL_THROW) << "This database implementation does not store "
                           "observation weights";
+    }
+  }
+  virtual void WriteObservationConstraints(
+      image_t image_id, const std::vector<std::optional<point3D_t>>& ids) {
+    for (const auto& id : ids) {
+      if (id.has_value()) {
+        LOG(FATAL_THROW) << "This database implementation does not store "
+                            "observation constraints";
+      }
+    }
+  }
+  virtual void WriteConstrainingPoints3D(
+      const std::unordered_map<point3D_t, Eigen::Vector3d>& points) {
+    if (!points.empty()) {
+      LOG(FATAL_THROW) << "This database implementation does not store "
+                          "constraining 3D points";
     }
   }
   virtual void WriteDescriptors(image_t image_id,

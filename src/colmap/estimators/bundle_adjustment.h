@@ -190,6 +190,10 @@ struct BundleAdjustmentOptions : public BundleAdjustmentBackendOptions {
   // should not be modified.
   bool refine_points3D = true;
 
+  // Whether to add residuals for observations that reference ConstrainingPoint3D
+  // ids. Constraining 3D points are held constant. Caspar does not support this.
+  bool apply_constraints = true;
+
   // Minimum track length for a 3D point to be included in bundle adjustment.
   // Points with fewer observations are ignored.
   int min_track_length = 0;

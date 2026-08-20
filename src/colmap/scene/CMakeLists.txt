@@ -34,6 +34,7 @@ COLMAP_ADD_LIBRARY(
     NAME colmap_scene_types
     SRCS
         camera.h camera.cc
+        constraining_point3d.h constraining_point3d.cc
         frame.h frame.cc
         image.h image.cc
         point2d.h point2d.cc

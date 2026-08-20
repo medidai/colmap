@@ -35,6 +35,7 @@
 #include "colmap/util/testing.h"
 
 #include <filesystem>
+#include <optional>
 #include <thread>
 
 #include <Eigen/Geometry>
@@ -361,6 +362,40 @@ TEST_P(ParameterizedDatabaseTests, ObservationWeights) {
   database->WriteObservationWeights(image.ImageId(), weights);
   database->ClearKeypoints();
   EXPECT_TRUE(database->ReadObservationWeights(image.ImageId()).empty());
+}
+
+TEST_P(ParameterizedDatabaseTests, ObservationConstraints) {
+  std::shared_ptr<Database> database = GetParam()(kInMemorySqliteDatabasePath);
+  Camera camera;
+  camera.camera_id = database->WriteCamera(camera);
+  Image image;
+  image.SetName("test");
+  image.SetCameraId(camera.camera_id);
+  image.SetImageId(database->WriteImage(image));
+
+  EXPECT_TRUE(database->ReadObservationConstraints(image.ImageId()).empty());
+  EXPECT_TRUE(database->ReadConstrainingPoints3D().empty());
+
+  const std::unordered_map<point3D_t, Eigen::Vector3d> points = {
+      {7, Eigen::Vector3d(1, 2, 3)}};
+  database->WriteConstrainingPoints3D(points);
+  EXPECT_EQ(database->ReadConstrainingPoints3D().at(7),
+            Eigen::Vector3d(1, 2, 3));
+
+  const std::vector<std::optional<point3D_t>> constraint_ids = {
+      7, std::nullopt, std::nullopt};
+  database->WriteObservationConstraints(image.ImageId(), constraint_ids);
+  EXPECT_EQ(database->ReadObservationConstraints(image.ImageId()),
+            constraint_ids);
+
+  database->WriteObservationConstraints(image.ImageId(), {});
+  EXPECT_TRUE(database->ReadObservationConstraints(image.ImageId()).empty());
+
+  database->WriteObservationConstraints(image.ImageId(), constraint_ids);
+  database->ClearKeypoints();
+  EXPECT_TRUE(database->ReadObservationConstraints(image.ImageId()).empty());
+  EXPECT_EQ(database->ReadConstrainingPoints3D().at(7),
+            Eigen::Vector3d(1, 2, 3));
 }
 
 TEST_P(ParameterizedDatabaseTests, ReadKeypointsEmpty) {
@@ -742,6 +777,11 @@ TEST_P(ParameterizedDatabaseTests, Merge) {
   database2->WriteKeypoints(image_id4, keypoints4);
   const std::vector<float> weights1(10, 2.0f);
   database1->WriteObservationWeights(image_id1, weights1);
+  const std::unordered_map<point3D_t, Eigen::Vector3d> constraining1 = {
+      {11, Eigen::Vector3d(4, 5, 6)}};
+  database1->WriteConstrainingPoints3D(constraining1);
+  const std::vector<std::optional<point3D_t>> constraints1(10, 11);
+  database1->WriteObservationConstraints(image_id1, constraints1);
   database1->WriteDescriptors(image_id1, descriptors1);
   database1->WriteDescriptors(image_id2, descriptors2);
   database2->WriteDescriptors(image_id3, descriptors3);
@@ -807,6 +847,9 @@ TEST_P(ParameterizedDatabaseTests, Merge) {
   EXPECT_EQ(merged_database->ReadKeypoints(3)[0].x, 300);
   EXPECT_EQ(merged_database->ReadKeypoints(4)[0].x, 400);
   EXPECT_EQ(merged_database->ReadObservationWeights(1), weights1);
+  EXPECT_EQ(merged_database->ReadConstrainingPoints3D().at(11),
+            Eigen::Vector3d(4, 5, 6));
+  EXPECT_EQ(merged_database->ReadObservationConstraints(1), constraints1);
   EXPECT_EQ(merged_database->ReadDescriptors(1).type, descriptors1.type);
   EXPECT_EQ(merged_database->ReadDescriptors(1).data.size(),
             descriptors1.data.size());
@@ -833,6 +876,31 @@ TEST_P(ParameterizedDatabaseTests, Merge) {
   EXPECT_EQ(merged_database->NumKeypoints(), 0);
   EXPECT_EQ(merged_database->NumDescriptors(), 0);
   EXPECT_EQ(merged_database->NumMatches(), 0);
+}
+
+TEST_P(ParameterizedDatabaseTests, MergeRejectsOverlappingConstrainingIds) {
+  std::shared_ptr<Database> database1 =
+      GetParam()(kInMemorySqliteDatabasePath);
+  std::shared_ptr<Database> database2 =
+      GetParam()(kInMemorySqliteDatabasePath);
+  Camera camera = Camera::CreateFromModelId(
+      kInvalidCameraId, CameraModelId::kSimplePinhole, 1.0, 1, 1);
+  camera.camera_id = database1->WriteCamera(camera);
+  Image image1;
+  image1.SetName("a");
+  image1.SetCameraId(camera.camera_id);
+  database1->WriteImage(image1);
+  camera.camera_id = database2->WriteCamera(camera);
+  Image image2;
+  image2.SetName("b");
+  image2.SetCameraId(camera.camera_id);
+  database2->WriteImage(image2);
+  database1->WriteConstrainingPoints3D({{5, Eigen::Vector3d::Zero()}});
+  database2->WriteConstrainingPoints3D({{5, Eigen::Vector3d::Ones()}});
+  std::shared_ptr<Database> merged_database =
+      GetParam()(kInMemorySqliteDatabasePath);
+  EXPECT_THROW(Database::Merge(*database1, *database2, merged_database.get()),
+               std::invalid_argument);
 }
 
 INSTANTIATE_TEST_SUITE_P(

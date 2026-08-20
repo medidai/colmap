@@ -34,6 +34,7 @@
 #include "colmap/util/timer.h"
 
 #include <cmath>
+#include <optional>
 
 namespace colmap {
 namespace {
@@ -223,6 +224,13 @@ void DatabaseCache::Load(const Database& database, const Options& options) {
     // are loaded so that their keypoints are populated (e.g., for
     // triangulation on an existing reconstruction).
     images_.reserve(load_frame_ids.size());
+    constraining_points3D_.clear();
+    for (const auto& [point3D_id, xyz] : database.ReadConstrainingPoints3D()) {
+      THROW_CHECK(
+          constraining_points3D_.emplace(point3D_id, ConstrainingPoint3D(xyz))
+              .second)
+          << "Duplicate constraining point id " << point3D_id;
+    }
     for (auto& image : images) {
       if (load_frame_ids.count(image.FrameId()) == 0) {
         continue;
@@ -242,6 +250,22 @@ void DatabaseCache::Load(const Database& database, const Options& options) {
               << "Observation weight must be finite and non-negative, got "
               << weights[i];
           image.Point2D(i).weight = weights[i];
+        }
+      }
+      const std::vector<std::optional<point3D_t>> constraints =
+          database.ReadObservationConstraints(image_id);
+      if (!constraints.empty()) {
+        THROW_CHECK_EQ(constraints.size(), image.NumPoints2D())
+            << "Observation constraint count does not match keypoints for image "
+            << image_id;
+        for (size_t i = 0; i < constraints.size(); ++i) {
+          if (!constraints[i].has_value()) {
+            continue;
+          }
+          THROW_CHECK(constraining_points3D_.count(*constraints[i]) > 0)
+              << "Observation references unknown constraining point "
+              << *constraints[i] << " for image " << image_id;
+          image.Point2D(i).constraint_point_id = constraints[i];
         }
       }
       images_.emplace(image_id, std::move(image));
@@ -407,6 +431,7 @@ std::shared_ptr<DatabaseCache> DatabaseCache::CreateFromCache(
 
   // Copy pose priors.
   cache->pose_priors_ = database_cache.PosePriors();
+  cache->constraining_points3D_ = database_cache.ConstrainingPoints3D();
   if (options.convert_pose_priors_to_enu) {
     cache->ConvertPosePriorsToENU();
   }

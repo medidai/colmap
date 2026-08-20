@@ -700,6 +700,13 @@ class DefaultBundleAdjuster : public CeresBundleAdjuster {
     // Add residuals to bundle adjustment problem.
     size_t num_observations = 0;
     for (const Point2D& point2D : image.Points2D()) {
+      if (options_.apply_constraints &&
+          point2D.constraint_point_id.has_value()) {
+        AddConstrainedObservation(
+            image, reconstruction, point2D, constant_cam_from_world);
+        num_observations += 1;
+      }
+
       if (!point2D.HasPoint3D() || config_.IsIgnoredPoint(point2D.point3D_id)) {
         continue;
       }
@@ -762,6 +769,17 @@ class DefaultBundleAdjuster : public CeresBundleAdjuster {
             ? std::make_optional<Rigid3d>(sensor_from_rig * rig_from_world)
             : std::nullopt;
 
+    if (options_.apply_constraints) {
+      for (const Point2D& point2D : image.Points2D()) {
+        if (point2D.constraint_point_id.has_value()) {
+          LOG(FATAL_THROW)
+              << "Constraining observations require a trivial one-camera rig; "
+                 "image "
+              << image.ImageId() << " is not the rig reference";
+        }
+      }
+    }
+
     // Add residuals to bundle adjustment problem.
     size_t num_observations = 0;
     for (const Point2D& point2D : image.Points2D()) {
@@ -814,6 +832,43 @@ class DefaultBundleAdjuster : public CeresBundleAdjuster {
     if (num_observations > 0) {
       parameterized_camera_ids_.insert(image.CameraId());
       parameterized_image_ids_.insert(image.ImageId());
+    }
+  }
+
+  void AddConstrainedObservation(Image& image,
+                                 Reconstruction& reconstruction,
+                                 const Point2D& point2D,
+                                 const bool constant_cam_from_world) {
+    THROW_CHECK(image.IsRefInFrame());
+    THROW_CHECK_EQ(image.FramePtr()->RigPtr()->NumSensors(), 1)
+        << "Constraining observations require a trivial one-camera rig; image "
+        << image.ImageId() << " belongs to a rig with "
+        << image.FramePtr()->RigPtr()->NumSensors() << " sensors";
+    THROW_CHECK(point2D.constraint_point_id.has_value());
+    const point3D_t constraint_id = *point2D.constraint_point_id;
+    THROW_CHECK(reconstruction.ExistsConstrainingPoint3D(constraint_id))
+        << "Observation on image " << image.ImageId()
+        << " references unknown constraining point " << constraint_id;
+    ConstrainingPoint3D& point3D =
+        reconstruction.ConstrainingPoint3D(constraint_id);
+    Camera& camera = *image.CameraPtr();
+    Rigid3d& rig_from_world = image.FramePtr()->RigFromWorld();
+
+    if (constant_cam_from_world) {
+      problem_->AddResidualBlock(
+          CreateCameraCostFunction<ReprojErrorConstantPoseCostFunctor>(
+              camera.model_id, point2D.xy, rig_from_world),
+          ObservationLoss(point2D.weight),
+          point3D.xyz.data(),
+          camera.params.data());
+      problem_->SetParameterBlockConstant(point3D.xyz.data());
+    } else {
+      problem_->AddResidualBlock(
+          CreateCameraCostFunction<ReprojErrorConstantPoint3DCostFunctor>(
+              camera.model_id, point2D.xy, point3D.xyz),
+          ObservationLoss(point2D.weight),
+          rig_from_world.params.data(),
+          camera.params.data());
     }
   }
 

@@ -56,7 +56,9 @@ TEST(Point2D, Print) {
   point2D.xy = Eigen::Vector2d(1, 2);
   std::ostringstream stream;
   stream << point2D;
-  EXPECT_EQ(stream.str(), "Point2D(xy=[1, 2], point3D_id=-1)");
+  EXPECT_EQ(stream.str(),
+            "Point2D(xy=[1, 2], point3D_id=-1, weight=1, "
+            "constraint_point_id=None)");
 }
 
 TEST(Point2D, Point3DId) {

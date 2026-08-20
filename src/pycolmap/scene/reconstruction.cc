@@ -56,6 +56,7 @@ void BindReconstruction(py::module& m) {
       .def("num_images", &Reconstruction::NumImages)
       .def("num_reg_images", &Reconstruction::NumRegImages)
       .def("num_points3D", &Reconstruction::NumPoints3D)
+      .def("num_constraining_points3D", &Reconstruction::NumConstrainingPoints3D)
       .def_property_readonly("rigs",
                              &Reconstruction::Rigs,
                              py::return_value_policy::reference_internal)
@@ -96,6 +97,14 @@ void BindReconstruction(py::module& m) {
            "point3D_id"_a,
            "Direct accessor for a Point3D.",
            py::return_value_policy::reference_internal)
+      .def_property_readonly("constraining_points3D",
+                             &Reconstruction::ConstrainingPoints3D,
+                             py::return_value_policy::reference_internal)
+      .def("constraining_point3D",
+           py::overload_cast<point3D_t>(&Reconstruction::ConstrainingPoint3D),
+           "point3D_id"_a,
+           "Direct accessor for a ConstrainingPoint3D.",
+           py::return_value_policy::reference_internal)
       .def("reg_image_ids", &Reconstruction::RegImageIds)
       .def("reg_frame_ids", &Reconstruction::RegFrameIds)
       .def("point3D_ids", &Reconstruction::Point3DIds)
@@ -104,6 +113,9 @@ void BindReconstruction(py::module& m) {
       .def("exists_frame", &Reconstruction::ExistsFrame, "frame_id"_a)
       .def("exists_image", &Reconstruction::ExistsImage, "image_id"_a)
       .def("exists_point3D", &Reconstruction::ExistsPoint3D, "point3D_id"_a)
+      .def("exists_constraining_point3D",
+           &Reconstruction::ExistsConstrainingPoint3D,
+           "point3D_id"_a)
       .def("is_valid",
            &Reconstruction::IsValid,
            "Check whether the reconstruction object is internally consistent.")
@@ -159,6 +171,17 @@ void BindReconstruction(py::module& m) {
            "point3D_id"_a,
            "point3D"_a,
            "Add new 3D point with known ID.")
+      .def("add_constraining_point3D",
+           py::overload_cast<const Eigen::Vector3d&>(
+               &Reconstruction::AddConstrainingPoint3D),
+           "xyz"_a,
+           "Add a constraining 3D point and return its unique ID.")
+      .def("add_constraining_point3D_with_id",
+           py::overload_cast<point3D_t, ConstrainingPoint3D>(
+               &Reconstruction::AddConstrainingPoint3D),
+           "point3D_id"_a,
+           "point3D"_a,
+           "Add a constraining 3D point with a known ID.")
       .def("add_observation",
            &Reconstruction::AddObservation,
            "point3D_id"_a,

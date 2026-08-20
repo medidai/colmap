@@ -20,16 +20,21 @@ namespace py = pybind11;
 void BindPoint2D(py::module& m) {
   py::classh_ext<Point2D> PyPoint2D(m, "Point2D");
   PyPoint2D.def(py::init<>())
-      .def(py::init<const Eigen::Vector2d&, size_t, float>(),
+      .def(py::init<const Eigen::Vector2d&,
+                    size_t,
+                    float,
+                    std::optional<point3D_t>>(),
            "xy"_a,
            py::arg_v(
                "point3D_id", kInvalidPoint3DId, "pycolmap.INVALID_POINT3D_ID"),
-           "weight"_a = 1.0f)
+           "weight"_a = 1.0f,
+           "constraint_point_id"_a = py::none())
       .def_readwrite("xy", &Point2D::xy)
       .def("x", [](const Point2D& self) -> double { return self.xy[0]; })
       .def("y", [](const Point2D& self) -> double { return self.xy[1]; })
       .def_readwrite("point3D_id", &Point2D::point3D_id)
       .def_readwrite("weight", &Point2D::weight)
+      .def_readwrite("constraint_point_id", &Point2D::constraint_point_id)
       .def("has_point3D", &Point2D::HasPoint3D);
   MakeDataclass(PyPoint2D);
 

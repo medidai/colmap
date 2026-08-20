@@ -107,6 +107,9 @@ struct IncrementalPipelineOptions {
   // Whether to optimize rig poses during the reconstruction.
   bool ba_refine_sensor_from_rig = true;
 
+  // Whether local/global BA should apply constraining-point residuals.
+  bool ba_apply_constraints = true;
+
   // The minimum number of residuals per bundle adjustment problem to
   // enable multi-threading solving of the problems.
   int ba_min_num_residuals_for_cpu_multi_threading = 50000;

@@ -30,6 +30,7 @@
 #pragma once
 
 #include "colmap/scene/camera.h"
+#include "colmap/scene/constraining_point3d.h"
 #include "colmap/scene/correspondence_graph.h"
 #include "colmap/scene/database.h"
 #include "colmap/scene/image.h"
@@ -113,6 +114,8 @@ class DatabaseCache {
   inline const std::unordered_map<frame_t, class Frame>& Frames() const;
   inline const std::unordered_map<image_t, class Image>& Images() const;
   inline const std::vector<struct PosePrior>& PosePriors() const;
+  inline const std::unordered_map<point3D_t, struct ConstrainingPoint3D>&
+  ConstrainingPoints3D() const;
 
   // Check whether specific object exists.
   inline bool ExistsRig(rig_t rig_id) const;
@@ -136,6 +139,8 @@ class DatabaseCache {
   std::unordered_map<frame_t, class Frame> frames_;
   std::unordered_map<image_t, class Image> images_;
   std::vector<struct PosePrior> pose_priors_;
+  std::unordered_map<point3D_t, struct ConstrainingPoint3D>
+      constraining_points3D_;
   std::shared_ptr<class CorrespondenceGraph> correspondence_graph_;
 };
 
@@ -202,6 +207,11 @@ const std::unordered_map<image_t, class Image>& DatabaseCache::Images() const {
 
 const std::vector<struct PosePrior>& DatabaseCache::PosePriors() const {
   return pose_priors_;
+}
+
+const std::unordered_map<point3D_t, struct ConstrainingPoint3D>&
+DatabaseCache::ConstrainingPoints3D() const {
+  return constraining_points3D_;
 }
 
 bool DatabaseCache::ExistsRig(const rig_t rig_id) const {
