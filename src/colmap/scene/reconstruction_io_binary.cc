@@ -27,6 +27,7 @@
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 
+#include "colmap/scene/reconstruction_io_binary.h"
 #include "colmap/geometry/rigid3.h"
 #include "colmap/scene/camera.h"
 #include "colmap/scene/image.h"
@@ -39,7 +40,10 @@
 #include "colmap/util/file.h"
 #include "colmap/util/types.h"
 
+#include <cmath>
 #include <fstream>
+#include <iterator>
+#include <string>
 
 namespace colmap {
 
@@ -477,6 +481,107 @@ void WritePoints3DBinary(const Reconstruction& reconstruction,
   std::ofstream file(path, std::ios::trunc | std::ios::binary);
   THROW_CHECK_FILE_OPEN(file, path);
   WritePoints3DBinary(reconstruction, file);
+}
+
+namespace {
+
+constexpr uint32_t kMedidaSparseSidecarVersion = 1;
+
+void CheckObservationWeight(float weight) {
+  THROW_CHECK(std::isfinite(weight) && weight >= 0.0f)
+      << "Observation weight must be finite and non-negative, got " << weight;
+}
+
+std::string Sha256OfFile(const std::filesystem::path& path) {
+  std::ifstream file(path, std::ios::binary);
+  THROW_CHECK_FILE_OPEN(file, path);
+  const std::string data((std::istreambuf_iterator<char>(file)),
+                         std::istreambuf_iterator<char>());
+  return ComputeSHA256(data);
+}
+
+}  // namespace
+
+void ReadMedidaObservationWeightsBinary(
+    Reconstruction& reconstruction, const std::filesystem::path& path) {
+  const auto sidecar_path = path / kMedidaSparseSidecarFilename;
+  if (!ExistsFile(sidecar_path)) {
+    return;
+  }
+
+  std::ifstream file(sidecar_path, std::ios::binary);
+  THROW_CHECK_FILE_OPEN(file, sidecar_path);
+
+  char magic[4];
+  file.read(magic, 4);
+  THROW_CHECK(file.good() && std::string(magic, 4) == "MDDA")
+      << sidecar_path << " is not a Medida sparse sidecar";
+
+  const uint32_t version = ReadBinaryLittleEndian<uint32_t>(&file);
+  THROW_CHECK_EQ(version, kMedidaSparseSidecarVersion)
+      << sidecar_path << " has unsupported sidecar version " << version;
+  ReadBinaryLittleEndian<uint32_t>(&file);  // flags
+
+  char digest[64];
+  file.read(digest, 64);
+  THROW_CHECK(file.good()) << sidecar_path << " is truncated";
+  const std::string expected_digest(digest, digest + 64);
+  const auto images_path = path / "images.bin";
+  THROW_CHECK(ExistsFile(images_path))
+      << sidecar_path << " requires " << images_path;
+  THROW_CHECK_EQ(Sha256OfFile(images_path), expected_digest)
+      << sidecar_path << " does not match images.bin";
+
+  const uint64_t num_images = ReadBinaryLittleEndian<uint64_t>(&file);
+  for (uint64_t i = 0; i < num_images; ++i) {
+    const image_t image_id = ReadBinaryLittleEndian<image_t>(&file);
+    const uint64_t num_points2D = ReadBinaryLittleEndian<uint64_t>(&file);
+    THROW_CHECK(reconstruction.ExistsImage(image_id))
+        << sidecar_path << " references unknown image " << image_id;
+    Image& image = reconstruction.Image(image_id);
+    THROW_CHECK_EQ(num_points2D, image.NumPoints2D())
+        << sidecar_path << " point count mismatch for image " << image_id;
+    for (point2D_t point2D_idx = 0; point2D_idx < num_points2D; ++point2D_idx) {
+      const float weight = ReadBinaryLittleEndian<float>(&file);
+      CheckObservationWeight(weight);
+      image.Point2D(point2D_idx).weight = weight;
+    }
+  }
+  THROW_CHECK(file.good());
+}
+
+void WriteMedidaObservationWeightsBinary(
+    const Reconstruction& reconstruction, const std::filesystem::path& path) {
+  const auto sidecar_path = path / kMedidaSparseSidecarFilename;
+  if (!reconstruction.HasNonUnitObservationWeights()) {
+    if (ExistsFile(sidecar_path)) {
+      std::filesystem::remove(sidecar_path);
+    }
+    return;
+  }
+
+  const auto images_path = path / "images.bin";
+  THROW_CHECK(ExistsFile(images_path))
+      << "Write observation weights after writing images.bin";
+  const std::string digest = Sha256OfFile(images_path);
+  THROW_CHECK_EQ(digest.size(), 64);
+
+  std::ofstream file(sidecar_path, std::ios::trunc | std::ios::binary);
+  THROW_CHECK_FILE_OPEN(file, sidecar_path);
+  file.write("MDDA", 4);
+  WriteBinaryLittleEndian<uint32_t>(&file, kMedidaSparseSidecarVersion);
+  WriteBinaryLittleEndian<uint32_t>(&file, 0);
+  file.write(digest.data(), 64);
+
+  WriteBinaryLittleEndian<uint64_t>(&file, reconstruction.NumImages());
+  for (const auto& [image_id, image] : reconstruction.Images()) {
+    WriteBinaryLittleEndian<image_t>(&file, image_id);
+    WriteBinaryLittleEndian<uint64_t>(&file, image.NumPoints2D());
+    for (const Point2D& point2D : image.Points2D()) {
+      CheckObservationWeight(point2D.weight);
+      WriteBinaryLittleEndian<float>(&file, point2D.weight);
+    }
+  }
 }
 
 }  // namespace colmap

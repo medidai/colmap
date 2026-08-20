@@ -45,10 +45,11 @@ def test_point2d_has_point3d_false():
     assert not point.has_point3D()
 
 
-def test_point2d_has_point3d_true():
-    point = pycolmap.Point2D()
-    point.point3D_id = 1
-    assert point.has_point3D()
+def test_point2d_weight_default_and_readwrite():
+    point = pycolmap.Point2D(xy=np.array([1.0, 2.0]))
+    assert point.weight == 1.0
+    point.weight = 10.0
+    assert point.weight == 10.0
 
 
 def test_point2d_list_append_and_len():

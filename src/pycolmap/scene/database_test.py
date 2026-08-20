@@ -68,6 +68,15 @@ def test_database_write_and_read_keypoints(populated_database):
     assert read_keypoints.shape[0] == 2
 
 
+def test_database_write_and_read_observation_weights(populated_database):
+    database, camera_id, image_id = populated_database
+    weights = [1.0, 10.0]
+    database.write_observation_weights(image_id, weights)
+    assert database.read_observation_weights(image_id) == weights
+    database.write_observation_weights(image_id, [])
+    assert database.read_observation_weights(image_id) == []
+
+
 def test_database_write_and_read_descriptors(populated_database):
     database, camera_id, image_id = populated_database
     descriptors = pycolmap.FeatureDescriptors(

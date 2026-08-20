@@ -352,6 +352,65 @@ INSTANTIATE_TEST_SUITE_P(BundleAdjusterBackends,
                          BundleAdjusterBackendTest,
                          ::testing::Values(BundleAdjustmentBackend::CERES));
 
+TEST(BundleAdjustment, CeresWithObservationWeights) {
+  SetPRNGSeed(0);
+  Reconstruction reconstruction;
+  SyntheticDatasetOptions synthetic_dataset_options;
+  synthetic_dataset_options.num_rigs = 1;
+  synthetic_dataset_options.num_cameras_per_rig = 1;
+  synthetic_dataset_options.num_frames_per_rig = 8;
+  synthetic_dataset_options.num_points3D = 50;
+  SynthesizeDataset(synthetic_dataset_options, &reconstruction);
+
+  for (const image_t image_id : reconstruction.RegImageIds()) {
+    Image& image = reconstruction.Image(image_id);
+    for (Point2D& point2D : image.Points2D()) {
+      if (point2D.HasPoint3D()) {
+        point2D.weight = 10.0f;
+        break;
+      }
+    }
+  }
+
+  BundleAdjustmentConfig config;
+  for (const image_t image_id : reconstruction.RegImageIds()) {
+    config.AddImage(image_id);
+  }
+  config.FixGauge(BundleAdjustmentGauge::TWO_CAMS_FROM_WORLD);
+
+  BundleAdjustmentOptions options;
+  options.backend = BundleAdjustmentBackend::CERES;
+  std::unique_ptr<BundleAdjuster> bundle_adjuster =
+      CreateDefaultBundleAdjuster(options, config, reconstruction);
+  const auto summary = bundle_adjuster->Solve();
+  EXPECT_TRUE(summary->IsSolutionUsable());
+  EXPECT_GT(summary->num_residuals, 0);
+}
+
+TEST(BundleAdjustment, CasparRejectsNonUnitObservationWeights) {
+  SetPRNGSeed(0);
+  Reconstruction reconstruction;
+  SyntheticDatasetOptions synthetic_dataset_options;
+  synthetic_dataset_options.num_rigs = 1;
+  synthetic_dataset_options.num_cameras_per_rig = 1;
+  synthetic_dataset_options.num_frames_per_rig = 4;
+  synthetic_dataset_options.num_points3D = 10;
+  SynthesizeDataset(synthetic_dataset_options, &reconstruction);
+
+  Image& image = reconstruction.Image(*reconstruction.RegImageIds().begin());
+  ASSERT_GT(image.NumPoints2D(), 0);
+  image.Point2D(0).weight = 5.0f;
+
+  BundleAdjustmentConfig config;
+  for (const image_t image_id : reconstruction.RegImageIds()) {
+    config.AddImage(image_id);
+  }
+  BundleAdjustmentOptions options;
+  options.backend = BundleAdjustmentBackend::CASPAR;
+  EXPECT_THROW(CreateDefaultBundleAdjuster(options, config, reconstruction),
+               std::invalid_argument);
+}
+
 // Parameterized test for generic PosePriorBundleAdjuster interface across
 // backends.
 class PosePriorBundleAdjusterBackendTest

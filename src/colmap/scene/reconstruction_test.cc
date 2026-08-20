@@ -31,6 +31,7 @@
 
 #include "colmap/geometry/sim3.h"
 #include "colmap/scene/database_sqlite.h"
+#include "colmap/scene/reconstruction_io_binary.h"
 #include "colmap/scene/reconstruction_io_text.h"
 #include "colmap/scene/reconstruction_matchers.h"
 #include "colmap/scene/synthetic.h"
@@ -1355,6 +1356,39 @@ TEST(Reconstruction, ReadWriteBinaryRoundtrip) {
 
   EXPECT_THAT(loaded, ReconstructionEq(reconstruction));
   ExpectValidPtrs(loaded);
+}
+
+TEST(Reconstruction, ReadWriteBinaryObservationWeightsSidecar) {
+  SetPRNGSeed(0);
+  Reconstruction reconstruction;
+  SyntheticDatasetOptions synthetic_dataset_options;
+  synthetic_dataset_options.num_rigs = 1;
+  synthetic_dataset_options.num_cameras_per_rig = 1;
+  synthetic_dataset_options.num_frames_per_rig = 3;
+  synthetic_dataset_options.num_points3D = 5;
+  SynthesizeDataset(synthetic_dataset_options, &reconstruction);
+
+  const auto test_dir = CreateTestDir();
+  reconstruction.WriteBinary(test_dir);
+  EXPECT_FALSE(ExistsFile(test_dir / kMedidaSparseSidecarFilename));
+
+  Image& image = reconstruction.Image(*reconstruction.RegImageIds().begin());
+  ASSERT_GT(image.NumPoints2D(), 0);
+  image.Point2D(0).weight = 10.0f;
+  EXPECT_TRUE(reconstruction.HasNonUnitObservationWeights());
+
+  reconstruction.WriteBinary(test_dir);
+  EXPECT_TRUE(ExistsFile(test_dir / kMedidaSparseSidecarFilename));
+
+  Reconstruction loaded;
+  loaded.ReadBinary(test_dir);
+  EXPECT_THAT(loaded, ReconstructionEq(reconstruction));
+  EXPECT_EQ(loaded.Image(image.ImageId()).Point2D(0).weight, 10.0f);
+
+  image.Point2D(0).xy += Eigen::Vector2d(0.5, 0.0);
+  WriteImagesBinary(reconstruction, test_dir / "images.bin");
+  Reconstruction mismatched;
+  EXPECT_THROW(mismatched.ReadBinary(test_dir), std::invalid_argument);
 }
 
 TEST(Reconstruction, ReadAutoDetectFormat) {

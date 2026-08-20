@@ -340,6 +340,29 @@ TEST_P(ParameterizedDatabaseTests, Keypoints) {
   EXPECT_EQ(database->NumKeypointsForImage(image.ImageId()), 0);
 }
 
+TEST_P(ParameterizedDatabaseTests, ObservationWeights) {
+  std::shared_ptr<Database> database = GetParam()(kInMemorySqliteDatabasePath);
+  Camera camera;
+  camera.camera_id = database->WriteCamera(camera);
+  Image image;
+  image.SetName("test");
+  image.SetCameraId(camera.camera_id);
+  image.SetImageId(database->WriteImage(image));
+
+  EXPECT_TRUE(database->ReadObservationWeights(image.ImageId()).empty());
+
+  const std::vector<float> weights = {1.0f, 10.0f, 0.0f};
+  database->WriteObservationWeights(image.ImageId(), weights);
+  EXPECT_EQ(database->ReadObservationWeights(image.ImageId()), weights);
+
+  database->WriteObservationWeights(image.ImageId(), {});
+  EXPECT_TRUE(database->ReadObservationWeights(image.ImageId()).empty());
+
+  database->WriteObservationWeights(image.ImageId(), weights);
+  database->ClearKeypoints();
+  EXPECT_TRUE(database->ReadObservationWeights(image.ImageId()).empty());
+}
+
 TEST_P(ParameterizedDatabaseTests, ReadKeypointsEmpty) {
   std::shared_ptr<Database> database = GetParam()(kInMemorySqliteDatabasePath);
   Camera camera;
@@ -717,6 +740,8 @@ TEST_P(ParameterizedDatabaseTests, Merge) {
   database1->WriteKeypoints(image_id2, keypoints2);
   database2->WriteKeypoints(image_id3, keypoints3);
   database2->WriteKeypoints(image_id4, keypoints4);
+  const std::vector<float> weights1(10, 2.0f);
+  database1->WriteObservationWeights(image_id1, weights1);
   database1->WriteDescriptors(image_id1, descriptors1);
   database1->WriteDescriptors(image_id2, descriptors2);
   database2->WriteDescriptors(image_id3, descriptors3);
@@ -781,6 +806,7 @@ TEST_P(ParameterizedDatabaseTests, Merge) {
   EXPECT_EQ(merged_database->ReadKeypoints(2)[0].x, 200);
   EXPECT_EQ(merged_database->ReadKeypoints(3)[0].x, 300);
   EXPECT_EQ(merged_database->ReadKeypoints(4)[0].x, 400);
+  EXPECT_EQ(merged_database->ReadObservationWeights(1), weights1);
   EXPECT_EQ(merged_database->ReadDescriptors(1).type, descriptors1.type);
   EXPECT_EQ(merged_database->ReadDescriptors(1).data.size(),
             descriptors1.data.size());

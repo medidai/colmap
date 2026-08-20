@@ -595,6 +595,13 @@ void BindDatabase(py::module& m) {
                &Database::WriteKeypoints),
            "image_id"_a,
            "keypoints"_a)
+      .def("read_observation_weights",
+           &Database::ReadObservationWeights,
+           "image_id"_a)
+      .def("write_observation_weights",
+           &Database::WriteObservationWeights,
+           "image_id"_a,
+           "weights"_a)
       .def("write_descriptors",
            &Database::WriteDescriptors,
            "image_id"_a,

@@ -292,6 +292,17 @@ bool Reconstruction::IsValid() const {
   return true;
 }
 
+bool Reconstruction::HasNonUnitObservationWeights() const {
+  for (const auto& [_, image] : images_) {
+    for (const Point2D& point2D : image.Points2D()) {
+      if (point2D.weight != 1.0f) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 void Reconstruction::Load(const DatabaseCache& database_cache) {
   // Add cameras.
   cameras_.reserve(database_cache.NumCameras());
@@ -1026,6 +1037,7 @@ void Reconstruction::ReadBinary(const std::filesystem::path& path) {
   }
   ReadImagesBinary(*this, path / "images.bin");
   ReadPoints3DBinary(*this, path / "points3D.bin");
+  ReadMedidaObservationWeightsBinary(*this, path);
 }
 
 void Reconstruction::WriteText(const std::filesystem::path& path) const {
@@ -1044,6 +1056,7 @@ void Reconstruction::WriteBinary(const std::filesystem::path& path) const {
   WriteFramesBinary(*this, path / "frames.bin");
   WriteImagesBinary(*this, path / "images.bin");
   WritePoints3DBinary(*this, path / "points3D.bin");
+  WriteMedidaObservationWeightsBinary(*this, path);
 }
 
 std::vector<PlyPoint> Reconstruction::ConvertToPLY() const {

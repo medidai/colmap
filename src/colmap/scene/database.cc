@@ -127,8 +127,10 @@ void Database::Merge(const Database& database1,
     new_image_ids1.emplace(image.ImageId(), new_image_id);
     const auto keypoints = database1.ReadKeypoints(image.ImageId());
     const auto descriptors = database1.ReadDescriptors(image.ImageId());
+    const auto weights = database1.ReadObservationWeights(image.ImageId());
     merged_database->WriteKeypoints(new_image_id, keypoints);
     merged_database->WriteDescriptors(new_image_id, descriptors);
+    merged_database->WriteObservationWeights(new_image_id, weights);
   }
 
   std::unordered_map<image_t, image_t> new_image_ids2;
@@ -143,8 +145,10 @@ void Database::Merge(const Database& database1,
     new_image_ids2.emplace(image.ImageId(), new_image_id);
     const auto keypoints = database2.ReadKeypoints(image.ImageId());
     const auto descriptors = database2.ReadDescriptors(image.ImageId());
+    const auto weights = database2.ReadObservationWeights(image.ImageId());
     merged_database->WriteKeypoints(new_image_id, keypoints);
     merged_database->WriteDescriptors(new_image_id, descriptors);
+    merged_database->WriteObservationWeights(new_image_id, weights);
   }
 
   // Merge the frames.
