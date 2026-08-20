@@ -265,10 +265,14 @@ class Reconstruction {
   // Read data from binary/text file.
   void ReadText(const std::filesystem::path& path);
   void ReadBinary(const std::filesystem::path& path);
+  // Explicit reader for Medida's pre-4.1.1 extended sparse binary format.
+  void ReadBinaryMedidaV1(const std::filesystem::path& path);
 
   // Write data from binary/text file.
   void WriteText(const std::filesystem::path& path) const;
   void WriteBinary(const std::filesystem::path& path) const;
+  // Explicit writer for Medida's pre-4.1.1 extended sparse binary format.
+  void WriteBinaryMedidaV1(const std::filesystem::path& path) const;
 
   // Convert 3D points in reconstruction to PLY point cloud.
   std::vector<PlyPoint> ConvertToPLY() const;

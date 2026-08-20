@@ -47,8 +47,16 @@ void BindReconstruction(py::module& m) {
            "Write reconstruction in COLMAP binary format.")
       .def("read_text", &Reconstruction::ReadText, "path"_a)
       .def("read_binary", &Reconstruction::ReadBinary, "path"_a)
+      .def("read_binary_medida_v1",
+           &Reconstruction::ReadBinaryMedidaV1,
+           "path"_a,
+           "Explicitly read Medida's pre-4.1.1 extended sparse format.")
       .def("write_text", &Reconstruction::WriteText, "path"_a)
       .def("write_binary", &Reconstruction::WriteBinary, "path"_a)
+      .def("write_binary_medida_v1",
+           &Reconstruction::WriteBinaryMedidaV1,
+           "path"_a,
+           "Explicitly write Medida's pre-4.1.1 extended sparse format.")
       .def("num_rigs", &Reconstruction::NumRigs)
       .def("num_cameras", &Reconstruction::NumCameras)
       .def("num_frames", &Reconstruction::NumFrames)

@@ -3,6 +3,12 @@ import os
 import pycolmap
 
 
+def test_reconstruction_has_explicit_medida_v1_io():
+    reconstruction = pycolmap.Reconstruction()
+    assert hasattr(reconstruction, "read_binary_medida_v1")
+    assert hasattr(reconstruction, "write_binary_medida_v1")
+
+
 def test_reconstruction_default_init():
     reconstruction = pycolmap.Reconstruction()
     assert reconstruction is not None

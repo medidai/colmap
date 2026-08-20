@@ -42,8 +42,10 @@
 #include "colmap/util/types.h"
 
 #include <cmath>
+#include <cstdint>
 #include <fstream>
 #include <iterator>
+#include <limits>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -260,6 +262,95 @@ void ReadImagesBinary(Reconstruction& reconstruction,
   ReadImagesBinary(reconstruction, file);
 }
 
+void ReadImagesBinaryMedidaV1(Reconstruction& reconstruction,
+                              std::istream& stream) {
+  THROW_CHECK(stream.good());
+  THROW_CHECK_EQ(reconstruction.NumRigs(), 0);
+  THROW_CHECK_EQ(reconstruction.NumFrames(), 0);
+  CreateOneRigPerCamera(reconstruction);
+
+  std::vector<Eigen::Vector2d> points2D;
+  std::vector<float> weights;
+  std::vector<std::optional<point3D_t>> constraint_point_ids;
+  std::vector<point3D_t> point3D_ids;
+
+  const size_t num_reg_images = ReadBinaryLittleEndian<uint64_t>(&stream);
+  for (size_t i = 0; i < num_reg_images; ++i) {
+    Image image;
+    image.SetImageId(ReadBinaryLittleEndian<image_t>(&stream));
+
+    Rigid3d cam_from_world;
+    cam_from_world.rotation().w() = ReadBinaryLittleEndian<double>(&stream);
+    cam_from_world.rotation().x() = ReadBinaryLittleEndian<double>(&stream);
+    cam_from_world.rotation().y() = ReadBinaryLittleEndian<double>(&stream);
+    cam_from_world.rotation().z() = ReadBinaryLittleEndian<double>(&stream);
+    cam_from_world.translation().x() =
+        ReadBinaryLittleEndian<double>(&stream);
+    cam_from_world.translation().y() =
+        ReadBinaryLittleEndian<double>(&stream);
+    cam_from_world.translation().z() =
+        ReadBinaryLittleEndian<double>(&stream);
+    image.SetCameraId(ReadBinaryLittleEndian<camera_t>(&stream));
+    CreateFrameForImage(image, cam_from_world, reconstruction);
+    image.SetFrameId(image.ImageId());
+    image.SetFramePtr(&reconstruction.Frame(image.ImageId()));
+
+    char name_char;
+    do {
+      stream.read(&name_char, 1);
+      THROW_CHECK(stream.good());
+      if (name_char != '\0') {
+        image.Name() += name_char;
+      }
+    } while (name_char != '\0');
+
+    const size_t num_points2D = ReadBinaryLittleEndian<uint64_t>(&stream);
+    points2D.clear();
+    weights.clear();
+    constraint_point_ids.clear();
+    point3D_ids.clear();
+    points2D.reserve(num_points2D);
+    weights.reserve(num_points2D);
+    constraint_point_ids.reserve(num_points2D);
+    point3D_ids.reserve(num_points2D);
+    for (size_t j = 0; j < num_points2D; ++j) {
+      points2D.emplace_back(ReadBinaryLittleEndian<double>(&stream),
+                            ReadBinaryLittleEndian<double>(&stream));
+      const float weight = ReadBinaryLittleEndian<float>(&stream);
+      THROW_CHECK(std::isfinite(weight) && weight >= 0.0f)
+          << "Medida v1 observation weight must be finite and non-negative";
+      weights.push_back(weight);
+      const int32_t constraint_id = ReadBinaryLittleEndian<int32_t>(&stream);
+      if (constraint_id < 0) {
+        constraint_point_ids.emplace_back(std::nullopt);
+      } else {
+        constraint_point_ids.emplace_back(
+            static_cast<point3D_t>(constraint_id));
+      }
+      point3D_ids.push_back(ReadBinaryLittleEndian<point3D_t>(&stream));
+    }
+
+    image.SetPoints2D(points2D);
+    for (point2D_t point2D_idx = 0; point2D_idx < image.NumPoints2D();
+         ++point2D_idx) {
+      Point2D& point2D = image.Point2D(point2D_idx);
+      point2D.weight = weights[point2D_idx];
+      point2D.constraint_point_id = constraint_point_ids[point2D_idx];
+      if (point3D_ids[point2D_idx] != kInvalidPoint3DId) {
+        image.SetPoint3DForPoint2D(point2D_idx, point3D_ids[point2D_idx]);
+      }
+    }
+    reconstruction.AddImage(std::move(image));
+  }
+}
+
+void ReadImagesBinaryMedidaV1(Reconstruction& reconstruction,
+                              const std::filesystem::path& path) {
+  std::ifstream file(path, std::ios::binary);
+  THROW_CHECK_FILE_OPEN(file, path);
+  ReadImagesBinaryMedidaV1(reconstruction, file);
+}
+
 void ReadPoints3DBinary(Reconstruction& reconstruction, std::istream& stream) {
   THROW_CHECK(stream.good());
 
@@ -452,6 +543,53 @@ void WriteImagesBinary(const Reconstruction& reconstruction,
   WriteImagesBinary(reconstruction, file);
 }
 
+void WriteImagesBinaryMedidaV1(const Reconstruction& reconstruction,
+                               std::ostream& stream) {
+  THROW_CHECK(stream.good());
+  WriteBinaryLittleEndian<uint64_t>(&stream, reconstruction.NumRegImages());
+  for (const image_t image_id : reconstruction.RegImageIds()) {
+    const Image& image = reconstruction.Image(image_id);
+    WriteBinaryLittleEndian<image_t>(&stream, image_id);
+    const Rigid3d& cam_from_world = image.CamFromWorld();
+    WriteBinaryLittleEndian<double>(&stream, cam_from_world.rotation().w());
+    WriteBinaryLittleEndian<double>(&stream, cam_from_world.rotation().x());
+    WriteBinaryLittleEndian<double>(&stream, cam_from_world.rotation().y());
+    WriteBinaryLittleEndian<double>(&stream, cam_from_world.rotation().z());
+    WriteBinaryLittleEndian<double>(&stream, cam_from_world.translation().x());
+    WriteBinaryLittleEndian<double>(&stream, cam_from_world.translation().y());
+    WriteBinaryLittleEndian<double>(&stream, cam_from_world.translation().z());
+    WriteBinaryLittleEndian<camera_t>(&stream, image.CameraId());
+    const std::string name = image.Name() + '\0';
+    stream.write(name.c_str(), name.size());
+    WriteBinaryLittleEndian<uint64_t>(&stream, image.NumPoints2D());
+    for (const Point2D& point2D : image.Points2D()) {
+      THROW_CHECK(std::isfinite(point2D.weight) && point2D.weight >= 0.0f);
+      WriteBinaryLittleEndian<double>(&stream, point2D.xy(0));
+      WriteBinaryLittleEndian<double>(&stream, point2D.xy(1));
+      WriteBinaryLittleEndian<float>(&stream, point2D.weight);
+      const int32_t constraint_id = [&]() {
+        if (!point2D.constraint_point_id.has_value()) {
+          return int32_t{-1};
+        }
+        THROW_CHECK_LE(*point2D.constraint_point_id,
+                       static_cast<point3D_t>(
+                           std::numeric_limits<int32_t>::max()))
+            << "Medida v1 only supports signed 32-bit constraint IDs";
+        return static_cast<int32_t>(*point2D.constraint_point_id);
+      }();
+      WriteBinaryLittleEndian<int32_t>(&stream, constraint_id);
+      WriteBinaryLittleEndian<point3D_t>(&stream, point2D.point3D_id);
+    }
+  }
+}
+
+void WriteImagesBinaryMedidaV1(const Reconstruction& reconstruction,
+                               const std::filesystem::path& path) {
+  std::ofstream file(path, std::ios::trunc | std::ios::binary);
+  THROW_CHECK_FILE_OPEN(file, path);
+  WriteImagesBinaryMedidaV1(reconstruction, file);
+}
+
 void WritePoints3DBinary(const Reconstruction& reconstruction,
                          std::ostream& stream) {
   THROW_CHECK(stream.good());
@@ -484,6 +622,51 @@ void WritePoints3DBinary(const Reconstruction& reconstruction,
   std::ofstream file(path, std::ios::trunc | std::ios::binary);
   THROW_CHECK_FILE_OPEN(file, path);
   WritePoints3DBinary(reconstruction, file);
+}
+
+void ReadConstrainingPoints3DBinaryMedidaV1(
+    Reconstruction& reconstruction, std::istream& stream) {
+  THROW_CHECK(stream.good());
+  const size_t num_points3D = ReadBinaryLittleEndian<uint64_t>(&stream);
+  for (size_t i = 0; i < num_points3D; ++i) {
+    const point3D_t point3D_id = ReadBinaryLittleEndian<point3D_t>(&stream);
+    Eigen::Vector3d xyz;
+    xyz.x() = ReadBinaryLittleEndian<double>(&stream);
+    xyz.y() = ReadBinaryLittleEndian<double>(&stream);
+    xyz.z() = ReadBinaryLittleEndian<double>(&stream);
+    reconstruction.AddConstrainingPoint3D(
+        point3D_id, colmap::ConstrainingPoint3D(xyz));
+  }
+}
+
+void ReadConstrainingPoints3DBinaryMedidaV1(
+    Reconstruction& reconstruction, const std::filesystem::path& path) {
+  std::ifstream file(path, std::ios::binary);
+  THROW_CHECK_FILE_OPEN(file, path);
+  ReadConstrainingPoints3DBinaryMedidaV1(reconstruction, file);
+}
+
+void WriteConstrainingPoints3DBinaryMedidaV1(
+    const Reconstruction& reconstruction, std::ostream& stream) {
+  THROW_CHECK(stream.good());
+  WriteBinaryLittleEndian<uint64_t>(&stream,
+                                    reconstruction.NumConstrainingPoints3D());
+  for (const point3D_t point3D_id :
+       ExtractSortedIds(reconstruction.ConstrainingPoints3D())) {
+    const ConstrainingPoint3D& point3D =
+        reconstruction.ConstrainingPoint3D(point3D_id);
+    WriteBinaryLittleEndian<point3D_t>(&stream, point3D_id);
+    WriteBinaryLittleEndian<double>(&stream, point3D.xyz.x());
+    WriteBinaryLittleEndian<double>(&stream, point3D.xyz.y());
+    WriteBinaryLittleEndian<double>(&stream, point3D.xyz.z());
+  }
+}
+
+void WriteConstrainingPoints3DBinaryMedidaV1(
+    const Reconstruction& reconstruction, const std::filesystem::path& path) {
+  std::ofstream file(path, std::ios::trunc | std::ios::binary);
+  THROW_CHECK_FILE_OPEN(file, path);
+  WriteConstrainingPoints3DBinaryMedidaV1(reconstruction, file);
 }
 
 namespace {
