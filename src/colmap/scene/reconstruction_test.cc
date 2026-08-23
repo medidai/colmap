@@ -37,10 +37,13 @@
 #include "colmap/scene/synthetic.h"
 #include "colmap/sensor/bitmap.h"
 #include "colmap/sensor/models.h"
+#include "colmap/util/endian.h"
 #include "colmap/util/file.h"
 #include "colmap/util/ply.h"
 #include "colmap/util/testing.h"
 
+#include <filesystem>
+#include <fstream>
 #include <sstream>
 
 #include <gmock/gmock.h>
@@ -914,11 +917,15 @@ TEST(Reconstruction, Transform) {
       reconstruction.AddPoint3D(Eigen::Vector3d(1, 1, 1), Track());
   reconstruction.AddObservation(point3D_id, TrackElement(1, 1));
   reconstruction.AddObservation(point3D_id, TrackElement(2, 1));
+  const point3D_t constraint_id =
+      reconstruction.AddConstrainingPoint3D(Eigen::Vector3d(1, 2, 3));
   reconstruction.Transform(
       Sim3d(2, Eigen::Quaterniond::Identity(), Eigen::Vector3d(0, 1, 2)));
   EXPECT_EQ(reconstruction.Image(1).ProjectionCenter(),
             Eigen::Vector3d(0, 1, 2));
   EXPECT_EQ(reconstruction.Point3D(point3D_id).xyz, Eigen::Vector3d(2, 3, 4));
+  EXPECT_EQ(reconstruction.ConstrainingPoint3D(constraint_id).xyz,
+            Eigen::Vector3d(2, 5, 8));
 }
 
 TEST(Reconstruction, FindImageWithName) {
@@ -1389,6 +1396,76 @@ TEST(Reconstruction, ReadWriteBinaryObservationWeightsSidecar) {
   WriteImagesBinary(reconstruction, test_dir / "images.bin");
   Reconstruction mismatched;
   EXPECT_THROW(mismatched.ReadBinary(test_dir), std::invalid_argument);
+}
+
+TEST(Reconstruction, ReadWriteBinaryConstrainingPointsSidecar) {
+  SetPRNGSeed(0);
+  Reconstruction reconstruction;
+  SyntheticDatasetOptions synthetic_dataset_options;
+  synthetic_dataset_options.num_rigs = 1;
+  synthetic_dataset_options.num_cameras_per_rig = 1;
+  synthetic_dataset_options.num_frames_per_rig = 3;
+  synthetic_dataset_options.num_points3D = 5;
+  SynthesizeDataset(synthetic_dataset_options, &reconstruction);
+
+  const point3D_t constraint_id =
+      reconstruction.AddConstrainingPoint3D(Eigen::Vector3d(1, 2, 3));
+  Image& image = reconstruction.Image(*reconstruction.RegImageIds().begin());
+  ASSERT_GT(image.NumPoints2D(), 0);
+  image.Point2D(0).constraint_point_id = constraint_id;
+
+  const auto test_dir = CreateTestDir();
+  reconstruction.WriteBinary(test_dir);
+  EXPECT_TRUE(ExistsFile(test_dir / kMedidaSparseSidecarFilename));
+
+  Reconstruction loaded;
+  loaded.ReadBinary(test_dir);
+  EXPECT_THAT(loaded, ReconstructionEq(reconstruction));
+  EXPECT_EQ(loaded.ConstrainingPoint3D(constraint_id).xyz,
+            Eigen::Vector3d(1, 2, 3));
+  EXPECT_EQ(loaded.Image(image.ImageId()).Point2D(0).constraint_point_id,
+            constraint_id);
+}
+
+TEST(Reconstruction, ReadBinaryWeightsSidecarWithoutConstraintsSection) {
+  SetPRNGSeed(0);
+  Reconstruction reconstruction;
+  SyntheticDatasetOptions synthetic_dataset_options;
+  synthetic_dataset_options.num_rigs = 1;
+  synthetic_dataset_options.num_cameras_per_rig = 1;
+  synthetic_dataset_options.num_frames_per_rig = 2;
+  synthetic_dataset_options.num_points3D = 4;
+  SynthesizeDataset(synthetic_dataset_options, &reconstruction);
+
+  Image& image = reconstruction.Image(*reconstruction.RegImageIds().begin());
+  ASSERT_GT(image.NumPoints2D(), 0);
+  image.Point2D(0).weight = 3.0f;
+
+  const auto test_dir = CreateTestDir();
+  reconstruction.WriteBinary(test_dir);
+  const auto sidecar_path = test_dir / kMedidaSparseSidecarFilename;
+  ASSERT_TRUE(ExistsFile(sidecar_path));
+
+  std::fstream sidecar(sidecar_path,
+                       std::ios::in | std::ios::out | std::ios::binary);
+  ASSERT_TRUE(sidecar.is_open());
+  sidecar.seekg(4 + 4 + 4 + 64, std::ios::beg);
+  const uint64_t num_images = ReadBinaryLittleEndian<uint64_t>(&sidecar);
+  for (uint64_t i = 0; i < num_images; ++i) {
+    ReadBinaryLittleEndian<image_t>(&sidecar);
+    const uint64_t num_points2D = ReadBinaryLittleEndian<uint64_t>(&sidecar);
+    sidecar.seekg(static_cast<std::streamoff>(num_points2D * sizeof(float)),
+                  std::ios::cur);
+  }
+  const std::streamoff weights_end = sidecar.tellg();
+  sidecar.close();
+  std::filesystem::resize_file(sidecar_path,
+                               static_cast<uintmax_t>(weights_end));
+
+  Reconstruction loaded;
+  loaded.ReadBinary(test_dir);
+  EXPECT_EQ(loaded.Image(image.ImageId()).Point2D(0).weight, 3.0f);
+  EXPECT_FALSE(loaded.HasConstraints());
 }
 
 TEST(Reconstruction, ReadAutoDetectFormat) {

@@ -31,6 +31,7 @@
 
 #include "colmap/geometry/sim3.h"
 #include "colmap/scene/camera.h"
+#include "colmap/scene/constraining_point3d.h"
 #include "colmap/scene/database.h"
 #include "colmap/scene/image.h"
 #include "colmap/scene/point3d.h"
@@ -70,6 +71,7 @@ class Reconstruction {
   inline size_t NumRegImages() const;
   inline size_t NumImages() const;
   inline size_t NumPoints3D() const;
+  inline size_t NumConstrainingPoints3D() const;
 
   // Get const objects.
   inline const class Rig& Rig(rig_t rig_id) const;
@@ -77,6 +79,8 @@ class Reconstruction {
   inline const class Frame& Frame(frame_t frame_id) const;
   inline const class Image& Image(image_t image_id) const;
   inline const struct Point3D& Point3D(point3D_t point3D_id) const;
+  inline const struct ConstrainingPoint3D& ConstrainingPoint3D(
+      point3D_t point3D_id) const;
 
   // Get mutable objects.
   inline class Rig& Rig(rig_t rig_id);
@@ -84,6 +88,7 @@ class Reconstruction {
   inline class Frame& Frame(frame_t frame_id);
   inline class Image& Image(image_t image_id);
   inline struct Point3D& Point3D(point3D_t point3D_id);
+  inline struct ConstrainingPoint3D& ConstrainingPoint3D(point3D_t point3D_id);
 
   // Get reference to all objects.
   inline const std::unordered_map<rig_t, class Rig>& Rigs() const;
@@ -92,6 +97,8 @@ class Reconstruction {
   inline const std::vector<frame_t>& RegFrameIds() const;
   inline const std::unordered_map<image_t, class Image>& Images() const;
   inline const std::unordered_map<point3D_t, struct Point3D>& Points3D() const;
+  inline const std::unordered_map<point3D_t, struct ConstrainingPoint3D>&
+  ConstrainingPoints3D() const;
 
   // Identifiers of all registered images.
   std::vector<image_t> RegImageIds() const;
@@ -104,11 +111,14 @@ class Reconstruction {
   inline bool ExistsFrame(frame_t frame_id) const;
   inline bool ExistsImage(image_t image_id) const;
   inline bool ExistsPoint3D(point3D_t point3D_id) const;
+  inline bool ExistsConstrainingPoint3D(point3D_t point3D_id) const;
 
   // Check whether the reconstruction object is internally consistent.
   bool IsValid() const;
 
   bool HasNonUnitObservationWeights() const;
+  bool HasConstraints() const;
+  bool HasConstrainedObservations() const;
 
   // Load data from given `DatabaseCache`.
   void Load(const DatabaseCache& database_cache);
@@ -157,6 +167,10 @@ class Reconstruction {
       const Eigen::Vector3d& xyz,
       Track track,
       const Eigen::Vector3ub& color = Eigen::Vector3ub::Zero());
+
+  void AddConstrainingPoint3D(point3D_t point3D_id,
+                              struct ConstrainingPoint3D point3D);
+  point3D_t AddConstrainingPoint3D(const Eigen::Vector3d& xyz);
 
   // Add observation to existing 3D point.
   void AddObservation(point3D_t point3D_id, const TrackElement& track_el);
@@ -297,6 +311,8 @@ class Reconstruction {
   std::unordered_map<frame_t, class Frame> frames_;
   std::unordered_map<image_t, class Image> images_;
   std::unordered_map<point3D_t, struct Point3D> points3D_;
+  std::unordered_map<point3D_t, struct ConstrainingPoint3D>
+      constraining_points3D_;
 
   // Unique set of frame_ids where `Frame(frame_id).HasPose() == true`.
   // Note that we intentionally use a vector instead of a set here leading
@@ -307,6 +323,7 @@ class Reconstruction {
 
   // Total number of added 3D points, used to generate unique identifiers.
   point3D_t max_point3D_id_;
+  point3D_t max_constraining_point3D_id_;
 };
 
 std::ostream& operator<<(std::ostream& stream,
@@ -329,6 +346,10 @@ size_t Reconstruction::NumRegImages() const { return num_reg_images_; }
 size_t Reconstruction::NumImages() const { return images_.size(); }
 
 size_t Reconstruction::NumPoints3D() const { return points3D_.size(); }
+
+size_t Reconstruction::NumConstrainingPoints3D() const {
+  return constraining_points3D_.size();
+}
 
 const class Rig& Reconstruction::Rig(const rig_t rig_id) const {
   try {
@@ -421,6 +442,26 @@ struct Point3D& Reconstruction::Point3D(const point3D_t point3D_id) {
   }
 }
 
+const struct ConstrainingPoint3D& Reconstruction::ConstrainingPoint3D(
+    const point3D_t point3D_id) const {
+  try {
+    return constraining_points3D_.at(point3D_id);
+  } catch (const std::out_of_range&) {
+    throw std::out_of_range(StringPrintf(
+        "ConstrainingPoint3D with ID %d does not exist", point3D_id));
+  }
+}
+
+struct ConstrainingPoint3D& Reconstruction::ConstrainingPoint3D(
+    const point3D_t point3D_id) {
+  try {
+    return constraining_points3D_.at(point3D_id);
+  } catch (const std::out_of_range&) {
+    throw std::out_of_range(StringPrintf(
+        "ConstrainingPoint3D with ID %d does not exist", point3D_id));
+  }
+}
+
 const std::unordered_map<rig_t, Rig>& Reconstruction::Rigs() const {
   return rigs_;
 }
@@ -445,6 +486,11 @@ const std::unordered_map<point3D_t, Point3D>& Reconstruction::Points3D() const {
   return points3D_;
 }
 
+const std::unordered_map<point3D_t, ConstrainingPoint3D>&
+Reconstruction::ConstrainingPoints3D() const {
+  return constraining_points3D_;
+}
+
 bool Reconstruction::ExistsRig(const rig_t rig_id) const {
   return rigs_.find(rig_id) != rigs_.end();
 }
@@ -463,6 +509,11 @@ bool Reconstruction::ExistsImage(const image_t image_id) const {
 
 bool Reconstruction::ExistsPoint3D(const point3D_t point3D_id) const {
   return points3D_.find(point3D_id) != points3D_.end();
+}
+
+bool Reconstruction::ExistsConstrainingPoint3D(
+    const point3D_t point3D_id) const {
+  return constraining_points3D_.find(point3D_id) != constraining_points3D_.end();
 }
 
 }  // namespace colmap

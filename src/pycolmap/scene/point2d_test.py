@@ -45,6 +45,15 @@ def test_point2d_has_point3d_false():
     assert not point.has_point3D()
 
 
+def test_point2d_constraint_point_id_default_and_readwrite():
+    point = pycolmap.Point2D(xy=np.array([1.0, 2.0]))
+    assert point.constraint_point_id is None
+    point.constraint_point_id = 9
+    assert point.constraint_point_id == 9
+    point.constraint_point_id = None
+    assert point.constraint_point_id is None
+
+
 def test_point2d_weight_default_and_readwrite():
     point = pycolmap.Point2D(xy=np.array([1.0, 2.0]))
     assert point.weight == 1.0

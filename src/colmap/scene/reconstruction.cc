@@ -44,7 +44,8 @@
 
 namespace colmap {
 
-Reconstruction::Reconstruction() : num_reg_images_(0), max_point3D_id_(0) {}
+Reconstruction::Reconstruction()
+    : num_reg_images_(0), max_point3D_id_(0), max_constraining_point3D_id_(0) {}
 
 Reconstruction::Reconstruction(const Reconstruction& other)
     : rigs_(other.rigs_),
@@ -52,9 +53,11 @@ Reconstruction::Reconstruction(const Reconstruction& other)
       frames_(other.frames_),
       images_(other.images_),
       points3D_(other.points3D_),
+      constraining_points3D_(other.constraining_points3D_),
       reg_frame_ids_(other.reg_frame_ids_),
       num_reg_images_(other.num_reg_images_),
-      max_point3D_id_(other.max_point3D_id_) {
+      max_point3D_id_(other.max_point3D_id_),
+      max_constraining_point3D_id_(other.max_constraining_point3D_id_) {
   for (auto& [_, frame] : frames_) {
     frame.ResetRigPtr();
     frame.SetRigPtr(&Rig(frame.RigId()));
@@ -74,9 +77,11 @@ Reconstruction& Reconstruction::operator=(const Reconstruction& other) {
     frames_ = other.frames_;
     images_ = other.images_;
     points3D_ = other.points3D_;
+    constraining_points3D_ = other.constraining_points3D_;
     reg_frame_ids_ = other.reg_frame_ids_;
     num_reg_images_ = other.num_reg_images_;
     max_point3D_id_ = other.max_point3D_id_;
+    max_constraining_point3D_id_ = other.max_constraining_point3D_id_;
     for (auto& [_, frame] : frames_) {
       frame.ResetRigPtr();
       frame.SetRigPtr(&Rig(frame.RigId()));
@@ -237,6 +242,13 @@ bool Reconstruction::IsValid() const {
           return false;
         }
       }
+      if (point2D.constraint_point_id.has_value() &&
+          !ExistsConstrainingPoint3D(*point2D.constraint_point_id)) {
+        LOG(WARNING) << "Image " << image_id << " point2D " << point2D_idx
+                     << " references non-existent constraining point "
+                     << *point2D.constraint_point_id;
+        return false;
+      }
     }
     if (image.NumPoints3D() != actual_num_points3D) {
       LOG(WARNING) << "Image " << image_id
@@ -303,6 +315,24 @@ bool Reconstruction::HasNonUnitObservationWeights() const {
   return false;
 }
 
+bool Reconstruction::HasConstraints() const {
+  if (!constraining_points3D_.empty()) {
+    return true;
+  }
+  return HasConstrainedObservations();
+}
+
+bool Reconstruction::HasConstrainedObservations() const {
+  for (const auto& [_, image] : images_) {
+    for (const Point2D& point2D : image.Points2D()) {
+      if (point2D.constraint_point_id.has_value()) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 void Reconstruction::Load(const DatabaseCache& database_cache) {
   // Add cameras.
   cameras_.reserve(database_cache.NumCameras());
@@ -356,6 +386,11 @@ void Reconstruction::Load(const DatabaseCache& database_cache) {
     } else {
       AddImage(image);
     }
+  }
+
+  for (const auto& [point3D_id, point3D] :
+       database_cache.ConstrainingPoints3D()) {
+    AddConstrainingPoint3D(point3D_id, point3D);
   }
 }
 
@@ -547,6 +582,20 @@ void Reconstruction::AddPoint3D(const point3D_t point3D_id,
     THROW_CHECK_LE(image.NumPoints3D(), image.NumPoints2D());
   }
   THROW_CHECK(points3D_.emplace(point3D_id, std::move(point3D)).second);
+}
+
+void Reconstruction::AddConstrainingPoint3D(
+    const point3D_t point3D_id, struct ConstrainingPoint3D point3D) {
+  max_constraining_point3D_id_ =
+      std::max(max_constraining_point3D_id_, point3D_id);
+  THROW_CHECK(
+      constraining_points3D_.emplace(point3D_id, std::move(point3D)).second);
+}
+
+point3D_t Reconstruction::AddConstrainingPoint3D(const Eigen::Vector3d& xyz) {
+  const point3D_t point3D_id = ++max_constraining_point3D_id_;
+  AddConstrainingPoint3D(point3D_id, colmap::ConstrainingPoint3D(xyz));
+  return point3D_id;
 }
 
 point3D_t Reconstruction::AddPoint3D(const Eigen::Vector3d& xyz,
@@ -810,6 +859,9 @@ void Reconstruction::Transform(const Sim3d& new_from_old_world) {
   for (auto& [_, point3D] : points3D_) {
     point3D.xyz = new_from_old_world * point3D.xyz;
   }
+  for (auto& [_, point3D] : constraining_points3D_) {
+    point3D.xyz = new_from_old_world * point3D.xyz;
+  }
 }
 
 Reconstruction Reconstruction::Crop(const Eigen::AlignedBox3d& bbox) const {
@@ -832,6 +884,9 @@ Reconstruction Reconstruction::Crop(const Eigen::AlignedBox3d& bbox) const {
       image.ResetPoint3DForPoint2D(point2D_idx);
     }
     cropped_reconstruction.AddImage(std::move(image));
+  }
+  for (const auto& [point3D_id, point3D] : constraining_points3D_) {
+    cropped_reconstruction.AddConstrainingPoint3D(point3D_id, point3D);
   }
   std::unordered_set<image_t> cropped_frame_ids;
   for (const auto& [_, point3D] : points3D_) {
@@ -1037,7 +1092,7 @@ void Reconstruction::ReadBinary(const std::filesystem::path& path) {
   }
   ReadImagesBinary(*this, path / "images.bin");
   ReadPoints3DBinary(*this, path / "points3D.bin");
-  ReadMedidaObservationWeightsBinary(*this, path);
+  ReadMedidaDeltaBinary(*this, path);
 }
 
 void Reconstruction::WriteText(const std::filesystem::path& path) const {
@@ -1056,7 +1111,7 @@ void Reconstruction::WriteBinary(const std::filesystem::path& path) const {
   WriteFramesBinary(*this, path / "frames.bin");
   WriteImagesBinary(*this, path / "images.bin");
   WritePoints3DBinary(*this, path / "points3D.bin");
-  WriteMedidaObservationWeightsBinary(*this, path);
+  WriteMedidaDeltaBinary(*this, path);
 }
 
 std::vector<PlyPoint> Reconstruction::ConvertToPLY() const {

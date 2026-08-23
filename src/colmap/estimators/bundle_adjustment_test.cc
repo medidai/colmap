@@ -387,6 +387,128 @@ TEST(BundleAdjustment, CeresWithObservationWeights) {
   EXPECT_GT(summary->num_residuals, 0);
 }
 
+TEST(BundleAdjustment, CeresWithConstrainingPoints) {
+  SetPRNGSeed(0);
+  Reconstruction reconstruction;
+  SyntheticDatasetOptions synthetic_dataset_options;
+  synthetic_dataset_options.num_rigs = 1;
+  synthetic_dataset_options.num_cameras_per_rig = 1;
+  synthetic_dataset_options.num_frames_per_rig = 8;
+  synthetic_dataset_options.num_points3D = 50;
+  SynthesizeDataset(synthetic_dataset_options, &reconstruction);
+
+  const point3D_t constraint_id =
+      reconstruction.AddConstrainingPoint3D(Eigen::Vector3d(0, 0, 1));
+  Image& image = reconstruction.Image(*reconstruction.RegImageIds().begin());
+  bool assigned = false;
+  for (Point2D& point2D : image.Points2D()) {
+    if (point2D.HasPoint3D()) {
+      point2D.constraint_point_id = constraint_id;
+      assigned = true;
+      break;
+    }
+  }
+  ASSERT_TRUE(assigned);
+
+  BundleAdjustmentConfig config;
+  for (const image_t image_id : reconstruction.RegImageIds()) {
+    config.AddImage(image_id);
+  }
+  config.FixGauge(BundleAdjustmentGauge::TWO_CAMS_FROM_WORLD);
+
+  BundleAdjustmentOptions options;
+  options.backend = BundleAdjustmentBackend::CERES;
+  std::unique_ptr<BundleAdjuster> bundle_adjuster =
+      CreateDefaultBundleAdjuster(options, config, reconstruction);
+  const auto summary = bundle_adjuster->Solve();
+  EXPECT_TRUE(summary->IsSolutionUsable());
+  EXPECT_GT(summary->num_residuals, 0);
+}
+
+TEST(BundleAdjustment, CeresRejectsMissingConstrainingPoint) {
+  SetPRNGSeed(0);
+  Reconstruction reconstruction;
+  SyntheticDatasetOptions synthetic_dataset_options;
+  synthetic_dataset_options.num_rigs = 1;
+  synthetic_dataset_options.num_cameras_per_rig = 1;
+  synthetic_dataset_options.num_frames_per_rig = 4;
+  synthetic_dataset_options.num_points3D = 10;
+  SynthesizeDataset(synthetic_dataset_options, &reconstruction);
+
+  Image& image = reconstruction.Image(*reconstruction.RegImageIds().begin());
+  ASSERT_GT(image.NumPoints2D(), 0);
+  image.Point2D(0).constraint_point_id = 99;
+
+  BundleAdjustmentConfig config;
+  for (const image_t image_id : reconstruction.RegImageIds()) {
+    config.AddImage(image_id);
+  }
+  BundleAdjustmentOptions options;
+  options.backend = BundleAdjustmentBackend::CERES;
+  EXPECT_THROW(CreateDefaultBundleAdjuster(options, config, reconstruction),
+               std::invalid_argument);
+}
+
+TEST(BundleAdjustment, CeresRejectsConstraintsOnNonTrivialRig) {
+  SetPRNGSeed(0);
+  Reconstruction reconstruction;
+  SyntheticDatasetOptions synthetic_dataset_options;
+  synthetic_dataset_options.num_rigs = 1;
+  synthetic_dataset_options.num_cameras_per_rig = 2;
+  synthetic_dataset_options.num_frames_per_rig = 4;
+  synthetic_dataset_options.num_points3D = 20;
+  SynthesizeDataset(synthetic_dataset_options, &reconstruction);
+
+  const point3D_t constraint_id =
+      reconstruction.AddConstrainingPoint3D(Eigen::Vector3d(1, 1, 1));
+  image_t non_ref_image_id = kInvalidImageId;
+  for (const image_t image_id : reconstruction.RegImageIds()) {
+    if (!reconstruction.Image(image_id).IsRefInFrame()) {
+      non_ref_image_id = image_id;
+      break;
+    }
+  }
+  ASSERT_NE(non_ref_image_id, kInvalidImageId);
+  Image& image = reconstruction.Image(non_ref_image_id);
+  ASSERT_GT(image.NumPoints2D(), 0);
+  image.Point2D(0).constraint_point_id = constraint_id;
+
+  BundleAdjustmentConfig config;
+  for (const image_t image_id : reconstruction.RegImageIds()) {
+    config.AddImage(image_id);
+  }
+  BundleAdjustmentOptions options;
+  options.backend = BundleAdjustmentBackend::CERES;
+  EXPECT_THROW(CreateDefaultBundleAdjuster(options, config, reconstruction),
+               std::invalid_argument);
+}
+
+TEST(BundleAdjustment, CasparRejectsConstrainingPoints) {
+  SetPRNGSeed(0);
+  Reconstruction reconstruction;
+  SyntheticDatasetOptions synthetic_dataset_options;
+  synthetic_dataset_options.num_rigs = 1;
+  synthetic_dataset_options.num_cameras_per_rig = 1;
+  synthetic_dataset_options.num_frames_per_rig = 4;
+  synthetic_dataset_options.num_points3D = 10;
+  SynthesizeDataset(synthetic_dataset_options, &reconstruction);
+
+  const point3D_t constraint_id =
+      reconstruction.AddConstrainingPoint3D(Eigen::Vector3d(1, 2, 3));
+  Image& image = reconstruction.Image(*reconstruction.RegImageIds().begin());
+  ASSERT_GT(image.NumPoints2D(), 0);
+  image.Point2D(0).constraint_point_id = constraint_id;
+
+  BundleAdjustmentConfig config;
+  for (const image_t image_id : reconstruction.RegImageIds()) {
+    config.AddImage(image_id);
+  }
+  BundleAdjustmentOptions options;
+  options.backend = BundleAdjustmentBackend::CASPAR;
+  EXPECT_THROW(CreateDefaultBundleAdjuster(options, config, reconstruction),
+               std::invalid_argument);
+}
+
 TEST(BundleAdjustment, CasparRejectsNonUnitObservationWeights) {
   SetPRNGSeed(0);
   Reconstruction reconstruction;

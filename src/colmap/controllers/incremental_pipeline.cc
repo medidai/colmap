@@ -165,6 +165,7 @@ BundleAdjustmentOptions IncrementalPipelineOptions::LocalBundleAdjustment()
   options.refine_principal_point = ba_refine_principal_point;
   options.refine_extra_params = ba_refine_extra_params;
   options.refine_sensor_from_rig = ba_refine_sensor_from_rig;
+  options.apply_constraints = ba_apply_constraints;
   if (options.ceres) {
     options.ceres->solver_options.function_tolerance =
         ba_local_function_tolerance;
@@ -201,6 +202,7 @@ BundleAdjustmentOptions IncrementalPipelineOptions::GlobalBundleAdjustment()
   options.refine_principal_point = ba_refine_principal_point;
   options.refine_extra_params = ba_refine_extra_params;
   options.refine_sensor_from_rig = ba_refine_sensor_from_rig;
+  options.apply_constraints = ba_apply_constraints;
   if (options.ceres) {
     options.ceres->solver_options.function_tolerance =
         ba_global_function_tolerance;

@@ -6,6 +6,7 @@
 
 #include <pybind11/eigen.h>
 #include <pybind11/pybind11.h>
+#include <pybind11/stl.h>
 
 using namespace colmap;
 using namespace pybind11::literals;
@@ -602,6 +603,17 @@ void BindDatabase(py::module& m) {
            &Database::WriteObservationWeights,
            "image_id"_a,
            "weights"_a)
+      .def("read_observation_constraints",
+           &Database::ReadObservationConstraints,
+           "image_id"_a)
+      .def("write_observation_constraints",
+           &Database::WriteObservationConstraints,
+           "image_id"_a,
+           "constraint_point_ids"_a)
+      .def("read_constraining_points3D", &Database::ReadConstrainingPoints3D)
+      .def("write_constraining_points3D",
+           &Database::WriteConstrainingPoints3D,
+           "points"_a)
       .def("write_descriptors",
            &Database::WriteDescriptors,
            "image_id"_a,

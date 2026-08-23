@@ -32,6 +32,8 @@
 #include "colmap/util/eigen_alignment.h"
 #include "colmap/util/types.h"
 
+#include <optional>
+
 #include <Eigen/Core>
 
 namespace colmap {
@@ -42,8 +44,12 @@ struct Point2D {
   Point2D() = default;
   Point2D(Eigen::Vector2d xy,
           point3D_t point3D_id = kInvalidPoint3DId,
-          float weight = 1.0f)
-      : xy(std::move(xy)), point3D_id(point3D_id), weight(weight) {}
+          float weight = 1.0f,
+          std::optional<point3D_t> constraint_point_id = std::nullopt)
+      : xy(std::move(xy)),
+        point3D_id(point3D_id),
+        weight(weight),
+        constraint_point_id(std::move(constraint_point_id)) {}
 
   // The image coordinates in pixels, starting at upper left corner with 0.
   Eigen::Vector2d xy = Eigen::Vector2d::Zero();
@@ -55,6 +61,9 @@ struct Point2D {
   // Per-observation weight applied to bundle-adjustment residuals. Default 1
   // matches unweighted COLMAP. Finite and non-negative.
   float weight = 1.0f;
+
+  // Optional id of a ConstrainingPoint3D. Absent means no constraint.
+  std::optional<point3D_t> constraint_point_id;
 
   // Determine whether the 2D point observes a 3D point.
   inline bool HasPoint3D() const;
@@ -73,7 +82,8 @@ bool Point2D::HasPoint3D() const { return point3D_id != kInvalidPoint3DId; }
 
 bool Point2D::operator==(const Point2D& other) const {
   return xy == other.xy && point3D_id == other.point3D_id &&
-         weight == other.weight;
+         weight == other.weight &&
+         constraint_point_id == other.constraint_point_id;
 }
 
 bool Point2D::operator!=(const Point2D& other) const {

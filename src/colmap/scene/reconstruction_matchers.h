@@ -64,6 +64,10 @@ class ReconstructionEqMatcher : public testing::MatcherInterface<T> {
       *listener << " have different images";
       return false;
     }
+    if (lhs.ConstrainingPoints3D() != rhs_.ConstrainingPoints3D()) {
+      *listener << " have different constraining points";
+      return false;
+    }
     if (lhs.Points3D() != rhs_.Points3D()) {
       *listener << " have different points";
       return false;

@@ -131,6 +131,8 @@ void Database::Merge(const Database& database1,
     merged_database->WriteKeypoints(new_image_id, keypoints);
     merged_database->WriteDescriptors(new_image_id, descriptors);
     merged_database->WriteObservationWeights(new_image_id, weights);
+    merged_database->WriteObservationConstraints(
+        new_image_id, database1.ReadObservationConstraints(image.ImageId()));
   }
 
   std::unordered_map<image_t, image_t> new_image_ids2;
@@ -149,7 +151,20 @@ void Database::Merge(const Database& database1,
     merged_database->WriteKeypoints(new_image_id, keypoints);
     merged_database->WriteDescriptors(new_image_id, descriptors);
     merged_database->WriteObservationWeights(new_image_id, weights);
+    merged_database->WriteObservationConstraints(
+        new_image_id, database2.ReadObservationConstraints(image.ImageId()));
   }
+
+  auto constraining_points = database1.ReadConstrainingPoints3D();
+  for (const auto& [point3D_id, xyz] : database2.ReadConstrainingPoints3D()) {
+    if (constraining_points.find(point3D_id) != constraining_points.end()) {
+      LOG(FATAL_THROW)
+          << "Cannot merge databases with overlapping constraining point id "
+          << point3D_id;
+    }
+    constraining_points.emplace(point3D_id, xyz);
+  }
+  merged_database->WriteConstrainingPoints3D(constraining_points);
 
   // Merge the frames.
 

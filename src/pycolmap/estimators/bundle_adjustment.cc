@@ -326,6 +326,9 @@ void BindBundleAdjuster(py::module& m) {
           .def_readwrite("refine_points3D",
                          &BAOpts::refine_points3D,
                          "Whether to refine 3D points.")
+          .def_readwrite("apply_constraints",
+                         &BAOpts::apply_constraints,
+                         "Whether to add residuals for constraining 3D points.")
           .def_readwrite("min_track_length",
                          &BAOpts::min_track_length,
                          "Minimum track length for a 3D point.")
