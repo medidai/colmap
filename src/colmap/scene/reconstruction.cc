@@ -1092,7 +1092,7 @@ void Reconstruction::ReadBinary(const std::filesystem::path& path) {
   }
   ReadImagesBinary(*this, path / "images.bin");
   ReadPoints3DBinary(*this, path / "points3D.bin");
-  ReadMedidaObservationWeightsBinary(*this, path);
+  ReadMedidaDeltaBinary(*this, path);
 }
 
 void Reconstruction::WriteText(const std::filesystem::path& path) const {
@@ -1111,7 +1111,7 @@ void Reconstruction::WriteBinary(const std::filesystem::path& path) const {
   WriteFramesBinary(*this, path / "frames.bin");
   WriteImagesBinary(*this, path / "images.bin");
   WritePoints3DBinary(*this, path / "points3D.bin");
-  WriteMedidaObservationWeightsBinary(*this, path);
+  WriteMedidaDeltaBinary(*this, path);
 }
 
 std::vector<PlyPoint> Reconstruction::ConvertToPLY() const {

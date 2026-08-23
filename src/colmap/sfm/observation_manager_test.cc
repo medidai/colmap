@@ -158,14 +158,15 @@ TEST(ObservationManager, FilterPoints3DWithLargeReprojectionErrorTypes) {
   image1.SetImageId(1);
   image1.SetCameraId(kCameraId);
   image1.SetFrameId(1);
-  image1.SetPoints2D({Eigen::Vector2d(50, 50)});  // Principal point
+  image1.SetPoints2D(std::vector<Eigen::Vector2d>{
+      Eigen::Vector2d(50, 50)});  // Principal point
   reconstruction.AddImage(image1);
 
   Image image2;
   image2.SetImageId(2);
   image2.SetCameraId(kCameraId);
   image2.SetFrameId(1);
-  image2.SetPoints2D({Eigen::Vector2d(50, 50)});
+  image2.SetPoints2D(std::vector<Eigen::Vector2d>{Eigen::Vector2d(50, 50)});
   reconstruction.AddImage(image2);
 
   ObservationManager obs_manager(reconstruction);
@@ -242,14 +243,14 @@ TEST(ObservationManager, FilterPoints3DSphericalSeam) {
   image1.SetImageId(1);
   image1.SetCameraId(kCameraId);
   image1.SetFrameId(1);
-  image1.SetPoints2D({Eigen::Vector2d(0, 250)});
+  image1.SetPoints2D(std::vector<Eigen::Vector2d>{Eigen::Vector2d(0, 250)});
   reconstruction.AddImage(image1);
 
   Image image2;
   image2.SetImageId(2);
   image2.SetCameraId(kCameraId);
   image2.SetFrameId(1);
-  image2.SetPoints2D({Eigen::Vector2d(0, 250)});
+  image2.SetPoints2D(std::vector<Eigen::Vector2d>{Eigen::Vector2d(0, 250)});
   reconstruction.AddImage(image2);
 
   ObservationManager obs_manager(reconstruction);

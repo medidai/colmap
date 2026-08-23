@@ -499,8 +499,8 @@ void CheckObservationWeight(float weight) {
 
 }  // namespace
 
-void ReadMedidaObservationWeightsBinary(Reconstruction& reconstruction,
-                                        const std::filesystem::path& path) {
+void ReadMedidaDeltaBinary(Reconstruction& reconstruction,
+                           const std::filesystem::path& path) {
   const auto sidecar_path = path / kMedidaSparseSidecarFilename;
   if (!ExistsFile(sidecar_path)) {
     return;
@@ -509,6 +509,7 @@ void ReadMedidaObservationWeightsBinary(Reconstruction& reconstruction,
   std::ifstream file(sidecar_path, std::ios::binary);
   THROW_CHECK_FILE_OPEN(file, sidecar_path);
 
+  // Reading Medida header
   char magic[4];
   file.read(magic, 4);
   THROW_CHECK(file.good() && std::string(magic, 4) == "MDDA")
@@ -524,6 +525,7 @@ void ReadMedidaObservationWeightsBinary(Reconstruction& reconstruction,
   THROW_CHECK(ExistsFile(images_path))
       << sidecar_path << " requires " << images_path;
 
+  // Reading observation weights
   const uint64_t num_images = ReadBinaryLittleEndian<uint64_t>(&file);
   for (uint64_t i = 0; i < num_images; ++i) {
     const image_t image_id = ReadBinaryLittleEndian<image_t>(&file);
@@ -541,10 +543,7 @@ void ReadMedidaObservationWeightsBinary(Reconstruction& reconstruction,
   }
   THROW_CHECK(file.good());
 
-  if (file.peek() == std::char_traits<char>::eof()) {
-    return;
-  }
-
+  // Reading constraining points
   const uint64_t num_constraining_points =
       ReadBinaryLittleEndian<uint64_t>(&file);
   for (uint64_t i = 0; i < num_constraining_points; ++i) {
@@ -568,14 +567,14 @@ void ReadMedidaObservationWeightsBinary(Reconstruction& reconstruction,
     THROW_CHECK_EQ(num_points2D, image.NumPoints2D())
         << sidecar_path << " constraint count mismatch for image " << image_id;
     for (point2D_t point2D_idx = 0; point2D_idx < num_points2D; ++point2D_idx) {
-      const point3D_t constraint_id =
-          ReadBinaryLittleEndian<point3D_t>(&file);
+      const point3D_t constraint_id = ReadBinaryLittleEndian<point3D_t>(&file);
       if (constraint_id == kInvalidPoint3DId) {
         image.Point2D(point2D_idx).constraint_point_id = std::nullopt;
       } else {
         THROW_CHECK(reconstruction.ExistsConstrainingPoint3D(constraint_id))
-            << sidecar_path << " observation references unknown constraining "
-                               "point "
+            << sidecar_path
+            << " observation references unknown constraining "
+               "point "
             << constraint_id;
         image.Point2D(point2D_idx).constraint_point_id = constraint_id;
       }
@@ -586,9 +585,10 @@ void ReadMedidaObservationWeightsBinary(Reconstruction& reconstruction,
       << sidecar_path << " contains an unsupported trailing section";
 }
 
-void WriteMedidaObservationWeightsBinary(const Reconstruction& reconstruction,
-                                         const std::filesystem::path& path) {
+void WriteMedidaDeltaBinary(const Reconstruction& reconstruction,
+                            const std::filesystem::path& path) {
   const auto sidecar_path = path / kMedidaSparseSidecarFilename;
+  // If there isn't really any delta - just don't write anything
   if (!reconstruction.HasNonUnitObservationWeights() &&
       !reconstruction.HasConstraints()) {
     if (ExistsFile(sidecar_path)) {
@@ -601,12 +601,14 @@ void WriteMedidaObservationWeightsBinary(const Reconstruction& reconstruction,
   THROW_CHECK(ExistsFile(images_path))
       << "Write observation weights after writing images.bin";
 
+  // Header - metadata for versioning & flags
   std::ofstream file(sidecar_path, std::ios::trunc | std::ios::binary);
   THROW_CHECK_FILE_OPEN(file, sidecar_path);
   file.write("MDDA", 4);
   WriteBinaryLittleEndian<uint32_t>(&file, kMedidaSparseSidecarVersion);
   WriteBinaryLittleEndian<uint32_t>(&file, 0);
 
+  // Writing observation weights
   WriteBinaryLittleEndian<uint64_t>(&file, reconstruction.NumImages());
   for (const auto& [image_id, image] : reconstruction.Images()) {
     WriteBinaryLittleEndian<image_t>(&file, image_id);
@@ -617,6 +619,7 @@ void WriteMedidaObservationWeightsBinary(const Reconstruction& reconstruction,
     }
   }
 
+  // Writing constraining points
   WriteBinaryLittleEndian<uint64_t>(&file,
                                     reconstruction.NumConstrainingPoints3D());
   for (const auto& [point3D_id, point3D] :
@@ -633,13 +636,13 @@ void WriteMedidaObservationWeightsBinary(const Reconstruction& reconstruction,
     WriteBinaryLittleEndian<uint64_t>(&file, image.NumPoints2D());
     for (const Point2D& point2D : image.Points2D()) {
       if (point2D.constraint_point_id.has_value()) {
-        THROW_CHECK(
-            reconstruction.ExistsConstrainingPoint3D(*point2D.constraint_point_id))
+        THROW_CHECK(reconstruction.ExistsConstrainingPoint3D(
+            *point2D.constraint_point_id))
             << "Image " << image_id << " references unknown constraining point "
             << *point2D.constraint_point_id;
       }
-      const point3D_t constraint_id = point2D.constraint_point_id.value_or(
-          kInvalidPoint3DId);
+      const point3D_t constraint_id =
+          point2D.constraint_point_id.value_or(kInvalidPoint3DId);
       WriteBinaryLittleEndian<point3D_t>(&file, constraint_id);
     }
   }

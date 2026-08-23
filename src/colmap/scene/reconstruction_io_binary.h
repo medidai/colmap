@@ -86,9 +86,9 @@ void WritePoints3DBinary(const Reconstruction& reconstruction,
 inline constexpr char kMedidaSparseSidecarFilename[] =
     "medida_sparse_ext.v1.bin";
 
-void ReadMedidaObservationWeightsBinary(Reconstruction& reconstruction,
-                                        const std::filesystem::path& path);
-void WriteMedidaObservationWeightsBinary(
-    const Reconstruction& reconstruction, const std::filesystem::path& path);
+void ReadMedidaDeltaBinary(Reconstruction& reconstruction,
+                           const std::filesystem::path& path);
+void WriteMedidaDeltaBinary(const Reconstruction& reconstruction,
+                            const std::filesystem::path& path);
 
 }  // namespace colmap
