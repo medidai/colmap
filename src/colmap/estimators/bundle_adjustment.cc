@@ -316,6 +316,12 @@ std::unique_ptr<BundleAdjuster> CreateDefaultBundleAdjuster(
     const BundleAdjustmentOptions& options,
     const BundleAdjustmentConfig& config,
     Reconstruction& reconstruction) {
+  if (options.backend == BundleAdjustmentBackend::CASPAR &&
+      reconstruction.HasNonUnitObservationWeights()) {
+    LOG(FATAL_THROW)
+        << "Caspar bundle adjustment does not support non-unit observation "
+           "weights; use the Ceres backend";
+  }
   switch (options.backend) {
     case BundleAdjustmentBackend::CERES:
       return CreateDefaultCeresBundleAdjuster(options, config, reconstruction);

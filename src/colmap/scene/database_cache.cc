@@ -33,6 +33,8 @@
 #include "colmap/util/string.h"
 #include "colmap/util/timer.h"
 
+#include <cmath>
+
 namespace colmap {
 namespace {
 
@@ -229,6 +231,19 @@ void DatabaseCache::Load(const Database& database, const Options& options) {
       const image_t image_id = image.ImageId();
       image.SetPoints2D(
           FeatureKeypointsToPointsVector(database.ReadKeypoints(image_id)));
+      const std::vector<float> weights =
+          database.ReadObservationWeights(image_id);
+      if (!weights.empty()) {
+        THROW_CHECK_EQ(weights.size(), image.NumPoints2D())
+            << "Observation weight count does not match keypoints for image "
+            << image_id;
+        for (size_t i = 0; i < weights.size(); ++i) {
+          THROW_CHECK(std::isfinite(weights[i]) && weights[i] >= 0.0f)
+              << "Observation weight must be finite and non-negative, got "
+              << weights[i];
+          image.Point2D(i).weight = weights[i];
+        }
+      }
       images_.emplace(image_id, std::move(image));
     }
 

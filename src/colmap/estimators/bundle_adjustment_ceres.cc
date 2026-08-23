@@ -38,7 +38,9 @@
 #include "colmap/util/misc.h"
 #include "colmap/util/threading.h"
 
+#include <cmath>
 #include <iomanip>
+#include <vector>
 
 namespace colmap {
 
@@ -719,14 +721,14 @@ class DefaultBundleAdjuster : public CeresBundleAdjuster {
         problem_->AddResidualBlock(
             CreateCameraCostFunction<ReprojErrorConstantPoseCostFunctor>(
                 camera.model_id, point2D.xy, rig_from_world),
-            loss_function_.get(),
+            ObservationLoss(point2D.weight),
             point3D.xyz.data(),
             camera.params.data());
       } else {
         problem_->AddResidualBlock(
             CreateCameraCostFunction<ReprojErrorCostFunctor>(camera.model_id,
                                                              point2D.xy),
-            loss_function_.get(),
+            ObservationLoss(point2D.weight),
             point3D.xyz.data(),
             rig_from_world.params.data(),
             camera.params.data());
@@ -786,14 +788,14 @@ class DefaultBundleAdjuster : public CeresBundleAdjuster {
         problem_->AddResidualBlock(
             CreateCameraCostFunction<ReprojErrorConstantPoseCostFunctor>(
                 camera.model_id, point2D.xy, cam_from_world.value()),
-            loss_function_.get(),
+            ObservationLoss(point2D.weight),
             point3D.xyz.data(),
             camera.params.data());
       } else if (!constant_rig_from_world && constant_sensor_from_rig) {
         problem_->AddResidualBlock(
             CreateCameraCostFunction<RigReprojErrorConstantRigCostFunctor>(
                 camera.model_id, point2D.xy, sensor_from_rig),
-            loss_function_.get(),
+            ObservationLoss(point2D.weight),
             point3D.xyz.data(),
             rig_from_world.params.data(),
             camera.params.data());
@@ -801,7 +803,7 @@ class DefaultBundleAdjuster : public CeresBundleAdjuster {
         problem_->AddResidualBlock(
             CreateCameraCostFunction<RigReprojErrorCostFunctor>(camera.model_id,
                                                                 point2D.xy),
-            loss_function_.get(),
+            ObservationLoss(point2D.weight),
             point3D.xyz.data(),
             sensor_from_rig.params.data(),
             rig_from_world.params.data(),
@@ -853,7 +855,7 @@ class DefaultBundleAdjuster : public CeresBundleAdjuster {
         problem_->AddResidualBlock(
             CreateCameraCostFunction<ReprojErrorConstantPoseCostFunctor>(
                 camera.model_id, point2D.xy, cam_from_world),
-            loss_function_.get(),
+            ObservationLoss(point2D.weight),
             point3D.xyz.data(),
             camera.params.data());
       } else {
@@ -864,7 +866,7 @@ class DefaultBundleAdjuster : public CeresBundleAdjuster {
         problem_->AddResidualBlock(
             CreateCameraCostFunction<ReprojErrorConstantPoseCostFunctor>(
                 camera.model_id, point2D.xy, cam_from_rig * rig_from_world),
-            loss_function_.get(),
+            ObservationLoss(point2D.weight),
             point3D.xyz.data(),
             camera.params.data());
       }
@@ -878,8 +880,22 @@ class DefaultBundleAdjuster : public CeresBundleAdjuster {
   }
 
  private:
+  ceres::LossFunction* ObservationLoss(float weight) {
+    THROW_CHECK(std::isfinite(weight) && weight >= 0.0f)
+        << "Observation weight must be finite and non-negative, got " << weight;
+    if (weight == 1.0f) {
+      return loss_function_.get();
+    }
+    scaled_observation_losses_.push_back(std::make_unique<ceres::ScaledLoss>(
+        loss_function_.get(),
+        static_cast<double>(weight),
+        ceres::DO_NOT_TAKE_OWNERSHIP));
+    return scaled_observation_losses_.back().get();
+  }
+
   std::shared_ptr<ceres::Problem> problem_;
   std::unique_ptr<ceres::LossFunction> loss_function_;
+  std::vector<std::unique_ptr<ceres::LossFunction>> scaled_observation_losses_;
 
   std::set<camera_t> parameterized_camera_ids_;
   std::set<image_t> parameterized_image_ids_;

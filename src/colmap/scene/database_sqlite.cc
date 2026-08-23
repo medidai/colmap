@@ -32,6 +32,8 @@
 #include "colmap/util/string.h"
 #include "colmap/util/version.h"
 
+#include <cmath>
+#include <cstring>
 #include <sqlite3.h>
 
 namespace colmap {
@@ -838,6 +840,36 @@ class SqliteDatabase : public Database {
     return FeatureKeypointsFromBlob(ReadKeypointsBlob(image_id));
   }
 
+  std::vector<float> ReadObservationWeights(
+      const image_t image_id) const override {
+    Sqlite3StmtContext context(sql_stmt_read_observation_weights_);
+    SQLITE3_CALL(
+        sqlite3_bind_int64(sql_stmt_read_observation_weights_, 1, image_id));
+    const int rc =
+        SQLITE3_CALL(sqlite3_step(sql_stmt_read_observation_weights_));
+    if (rc != SQLITE_ROW) {
+      return {};
+    }
+
+    const size_t rows = static_cast<size_t>(
+        sqlite3_column_int64(sql_stmt_read_observation_weights_, 0));
+    const size_t num_bytes = static_cast<size_t>(
+        sqlite3_column_bytes(sql_stmt_read_observation_weights_, 1));
+    THROW_CHECK_EQ(rows * sizeof(float), num_bytes);
+    std::vector<float> weights(rows);
+    if (num_bytes > 0) {
+      std::memcpy(weights.data(),
+                  sqlite3_column_blob(sql_stmt_read_observation_weights_, 1),
+                  num_bytes);
+    }
+    for (const float weight : weights) {
+      THROW_CHECK(std::isfinite(weight) && weight >= 0.0f)
+          << "Observation weight must be finite and non-negative, got "
+          << weight;
+    }
+    return weights;
+  }
+
   FeatureDescriptors ReadDescriptors(const image_t image_id) const override {
     Sqlite3StmtContext context(sql_stmt_read_descriptors_);
 
@@ -1274,6 +1306,38 @@ class SqliteDatabase : public Database {
     SQLITE3_CALL(sqlite3_step(sql_stmt_write_keypoints_));
   }
 
+  void WriteObservationWeights(const image_t image_id,
+                               const std::vector<float>& weights) override {
+    if (weights.empty()) {
+      Sqlite3StmtContext context(sql_stmt_delete_observation_weights_);
+      SQLITE3_CALL(sqlite3_bind_int64(
+          sql_stmt_delete_observation_weights_, 1, image_id));
+      SQLITE3_CALL(sqlite3_step(sql_stmt_delete_observation_weights_));
+      return;
+    }
+
+    Eigen::Matrix<float, Eigen::Dynamic, 1> blob(weights.size());
+    for (size_t i = 0; i < weights.size(); ++i) {
+      THROW_CHECK(std::isfinite(weights[i]) && weights[i] >= 0.0f)
+          << "Observation weight must be finite and non-negative, got "
+          << weights[i];
+      blob(static_cast<Eigen::Index>(i)) = weights[i];
+    }
+
+    Sqlite3StmtContext context(sql_stmt_write_observation_weights_);
+    SQLITE3_CALL(
+        sqlite3_bind_int64(sql_stmt_write_observation_weights_, 1, image_id));
+    SQLITE3_CALL(sqlite3_bind_int64(
+        sql_stmt_write_observation_weights_, 2, blob.rows()));
+    SQLITE3_CALL(sqlite3_bind_blob(
+        sql_stmt_write_observation_weights_,
+        3,
+        reinterpret_cast<const char*>(blob.data()),
+        static_cast<int>(blob.size() * sizeof(float)),
+        SQLITE_STATIC));
+    SQLITE3_CALL(sqlite3_step(sql_stmt_write_observation_weights_));
+  }
+
   void WriteDescriptors(const image_t image_id,
                         const FeatureDescriptors& descriptors) override {
     Sqlite3StmtContext context(sql_stmt_write_descriptors_);
@@ -1622,8 +1686,10 @@ class SqliteDatabase : public Database {
   }
 
   void ClearKeypoints() override {
-    Sqlite3StmtContext context(sql_stmt_clear_keypoints_);
+    Sqlite3StmtContext keypoints_context(sql_stmt_clear_keypoints_);
     SQLITE3_CALL(sqlite3_step(sql_stmt_clear_keypoints_));
+    Sqlite3StmtContext weights_context(sql_stmt_clear_observation_weights_);
+    SQLITE3_CALL(sqlite3_step(sql_stmt_clear_observation_weights_));
     database_entry_deleted_ = true;
   }
 
@@ -1791,6 +1857,9 @@ class SqliteDatabase : public Database {
         "SELECT rows, cols, data FROM keypoints WHERE image_id = ?;",
         &sql_stmt_read_keypoints_);
     prepare_sql_stmt(
+        "SELECT rows, data FROM medida_observation_weights WHERE image_id = ?;",
+        &sql_stmt_read_observation_weights_);
+    prepare_sql_stmt(
         "SELECT rows, cols, data, type FROM descriptors WHERE "
         "image_id = ?;",
         &sql_stmt_read_descriptors_);
@@ -1846,6 +1915,10 @@ class SqliteDatabase : public Database {
         "INSERT INTO keypoints(image_id, rows, cols, data) VALUES(?, ?, ?, ?);",
         &sql_stmt_write_keypoints_);
     prepare_sql_stmt(
+        "INSERT OR REPLACE INTO medida_observation_weights(image_id, rows, "
+        "data) VALUES(?, ?, ?);",
+        &sql_stmt_write_observation_weights_);
+    prepare_sql_stmt(
         "INSERT INTO descriptors(image_id, rows, cols, data, type) "
         "VALUES(?, ?, ?, ?, ?);",
         &sql_stmt_write_descriptors_);
@@ -1869,6 +1942,9 @@ class SqliteDatabase : public Database {
                      &sql_stmt_delete_matches_);
     prepare_sql_stmt("DELETE FROM two_view_geometries WHERE pair_id = ?;",
                      &sql_stmt_delete_two_view_geometry_);
+    prepare_sql_stmt(
+        "DELETE FROM medida_observation_weights WHERE image_id = ?;",
+        &sql_stmt_delete_observation_weights_);
 
     //////////////////////////////////////////////////////////////////////////////
     // clear_*
@@ -1881,6 +1957,8 @@ class SqliteDatabase : public Database {
     prepare_sql_stmt("DELETE FROM images;", &sql_stmt_clear_images_);
     prepare_sql_stmt("DELETE FROM pose_priors;", &sql_stmt_clear_pose_priors_);
     prepare_sql_stmt("DELETE FROM keypoints;", &sql_stmt_clear_keypoints_);
+    prepare_sql_stmt("DELETE FROM medida_observation_weights;",
+                     &sql_stmt_clear_observation_weights_);
     prepare_sql_stmt("DELETE FROM descriptors;", &sql_stmt_clear_descriptors_);
     prepare_sql_stmt("DELETE FROM matches;", &sql_stmt_clear_matches_);
     prepare_sql_stmt("DELETE FROM two_view_geometries;",
@@ -1903,6 +1981,7 @@ class SqliteDatabase : public Database {
     CreateImageTable();
     CreatePosePriorTable();
     CreateKeypointsTable();
+    CreateObservationWeightsTable();
     CreateDescriptorsTable();
     CreateMatchesTable();
     CreateTwoViewGeometriesTable();
@@ -2011,6 +2090,18 @@ class SqliteDatabase : public Database {
         "   (image_id  INTEGER  PRIMARY KEY  NOT NULL,"
         "    rows      INTEGER               NOT NULL,"
         "    cols      INTEGER               NOT NULL,"
+        "    data      BLOB,"
+        "    FOREIGN KEY(image_id) REFERENCES images(image_id) ON DELETE "
+        "CASCADE);";
+
+    SQLITE3_EXEC(database_, sql.c_str(), nullptr);
+  }
+
+  void CreateObservationWeightsTable() const {
+    const std::string sql =
+        "CREATE TABLE IF NOT EXISTS medida_observation_weights"
+        "   (image_id  INTEGER  PRIMARY KEY  NOT NULL,"
+        "    rows      INTEGER               NOT NULL,"
         "    data      BLOB,"
         "    FOREIGN KEY(image_id) REFERENCES images(image_id) ON DELETE "
         "CASCADE);";
@@ -2468,6 +2559,7 @@ class SqliteDatabase : public Database {
   sqlite3_stmt* sql_stmt_read_pose_prior_ = nullptr;
   sqlite3_stmt* sql_stmt_read_pose_priors_ = nullptr;
   sqlite3_stmt* sql_stmt_read_keypoints_ = nullptr;
+  sqlite3_stmt* sql_stmt_read_observation_weights_ = nullptr;
   sqlite3_stmt* sql_stmt_read_descriptors_ = nullptr;
   sqlite3_stmt* sql_stmt_read_matches_ = nullptr;
   sqlite3_stmt* sql_stmt_read_matches_all_ = nullptr;
@@ -2485,6 +2577,7 @@ class SqliteDatabase : public Database {
   sqlite3_stmt* sql_stmt_write_image_ = nullptr;
   sqlite3_stmt* sql_stmt_write_pose_prior_ = nullptr;
   sqlite3_stmt* sql_stmt_write_keypoints_ = nullptr;
+  sqlite3_stmt* sql_stmt_write_observation_weights_ = nullptr;
   sqlite3_stmt* sql_stmt_write_descriptors_ = nullptr;
   sqlite3_stmt* sql_stmt_write_matches_ = nullptr;
   sqlite3_stmt* sql_stmt_write_two_view_geometry_ = nullptr;
@@ -2494,6 +2587,7 @@ class SqliteDatabase : public Database {
   sqlite3_stmt* sql_stmt_delete_frame_data_ = nullptr;
   sqlite3_stmt* sql_stmt_delete_matches_ = nullptr;
   sqlite3_stmt* sql_stmt_delete_two_view_geometry_ = nullptr;
+  sqlite3_stmt* sql_stmt_delete_observation_weights_ = nullptr;
 
   // clear_*
   sqlite3_stmt* sql_stmt_clear_rigs_ = nullptr;
@@ -2503,6 +2597,7 @@ class SqliteDatabase : public Database {
   sqlite3_stmt* sql_stmt_clear_pose_priors_ = nullptr;
   sqlite3_stmt* sql_stmt_clear_descriptors_ = nullptr;
   sqlite3_stmt* sql_stmt_clear_keypoints_ = nullptr;
+  sqlite3_stmt* sql_stmt_clear_observation_weights_ = nullptr;
   sqlite3_stmt* sql_stmt_clear_matches_ = nullptr;
   sqlite3_stmt* sql_stmt_clear_two_view_geometries_ = nullptr;
 };

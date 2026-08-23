@@ -108,6 +108,8 @@ class Reconstruction {
   // Check whether the reconstruction object is internally consistent.
   bool IsValid() const;
 
+  bool HasNonUnitObservationWeights() const;
+
   // Load data from given `DatabaseCache`.
   void Load(const DatabaseCache& database_cache);
 

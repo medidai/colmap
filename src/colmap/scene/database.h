@@ -36,6 +36,7 @@
 #include "colmap/scene/two_view_geometry.h"
 #include "colmap/sensor/rig.h"
 #include "colmap/util/eigen_alignment.h"
+#include "colmap/util/logging.h"
 #include "colmap/util/types.h"
 
 #include <filesystem>
@@ -174,6 +175,11 @@ class Database {
   virtual FeatureKeypoints ReadKeypoints(image_t image_id) const = 0;
   virtual FeatureDescriptors ReadDescriptors(image_t image_id) const = 0;
 
+  // Optional per-observation BA weights. Missing rows mean unit weights.
+  virtual std::vector<float> ReadObservationWeights(image_t image_id) const {
+    return {};
+  }
+
   virtual FeatureMatchesBlob ReadMatchesBlob(image_t image_id1,
                                              image_t image_id2) const = 0;
   virtual FeatureMatches ReadMatches(image_t image_id1,
@@ -223,6 +229,13 @@ class Database {
                               const FeatureKeypoints& keypoints) = 0;
   virtual void WriteKeypoints(image_t image_id,
                               const FeatureKeypointsBlob& blob) = 0;
+  virtual void WriteObservationWeights(image_t image_id,
+                                       const std::vector<float>& weights) {
+    if (!weights.empty()) {
+      LOG(FATAL_THROW) << "This database implementation does not store "
+                          "observation weights";
+    }
+  }
   virtual void WriteDescriptors(image_t image_id,
                                 const FeatureDescriptors& descriptors) = 0;
   virtual void WriteMatches(image_t image_id1,
