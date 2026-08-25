@@ -66,6 +66,10 @@ CAMERA_MODELS = {
     CameraModel(model_id=8, model_name="SIMPLE_RADIAL_FISHEYE", num_params=4),
     CameraModel(model_id=9, model_name="RADIAL_FISHEYE", num_params=5),
     CameraModel(model_id=10, model_name="THIN_PRISM_FISHEYE", num_params=12),
+    CameraModel(
+        model_id=11, model_name="RAD_TAN_THIN_PRISM_FISHEYE", num_params=16
+    ),
+    CameraModel(model_id=12, model_name="RADIAL_3", num_params=6),
 }
 CAMERA_MODEL_IDS = dict(
     [(camera_model.model_id, camera_model) for camera_model in CAMERA_MODELS]

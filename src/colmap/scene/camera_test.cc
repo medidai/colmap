@@ -181,6 +181,11 @@ TEST(Camera, IsUndistorted) {
   EXPECT_TRUE(camera.IsUndistorted());
   camera.params = {1.0, 0.5, 0.5, 0.0, 0.005};
   EXPECT_FALSE(camera.IsUndistorted());
+  camera =
+      Camera::CreateFromModelId(1, Radial3CameraModel::model_id, 1.0, 1, 1);
+  EXPECT_TRUE(camera.IsUndistorted());
+  camera.params = {1.0, 0.5, 0.5, 0.0, 0.0, 0.005};
+  EXPECT_FALSE(camera.IsUndistorted());
   camera = Camera::CreateFromModelId(1, OpenCVCameraModel::model_id, 1.0, 1, 1);
   EXPECT_TRUE(camera.IsUndistorted());
   camera.params = {1.0, 1.0, 0.5, 0.5, 0.0, 0.0, 0.0, 0.001};
