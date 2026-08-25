@@ -1468,6 +1468,67 @@ TEST(Reconstruction, ReadBinaryWeightsSidecarWithoutConstraintsSection) {
   EXPECT_FALSE(loaded.HasConstraints());
 }
 
+TEST(Reconstruction, ReadWriteBinaryMedidaV1) {
+  SetPRNGSeed(0);
+  Reconstruction reconstruction;
+  SyntheticDatasetOptions synthetic_dataset_options;
+  synthetic_dataset_options.num_rigs = 1;
+  synthetic_dataset_options.num_cameras_per_rig = 1;
+  synthetic_dataset_options.num_frames_per_rig = 3;
+  synthetic_dataset_options.num_points3D = 5;
+  SynthesizeDataset(synthetic_dataset_options, &reconstruction);
+
+  const point3D_t constraint_id =
+      reconstruction.AddConstrainingPoint3D(Eigen::Vector3d(1, 2, 3));
+  Image& image = reconstruction.Image(*reconstruction.RegImageIds().begin());
+  ASSERT_GE(image.NumPoints2D(), 2);
+  image.Point2D(0).weight = 3.0f;
+  image.Point2D(0).constraint_point_id = constraint_id;
+  image.Point2D(1).constraint_point_id = std::nullopt;
+
+  const auto test_dir = CreateTestDir();
+  reconstruction.WriteBinaryMedidaV1(test_dir);
+  EXPECT_FALSE(ExistsFile(test_dir / kMedidaSparseSidecarFilename));
+  EXPECT_TRUE(ExistsFile(test_dir / "constraining_points3D.bin"));
+
+  Reconstruction loaded;
+  loaded.ReadBinaryMedidaV1(test_dir);
+  EXPECT_TRUE(loaded.IsValid());
+  EXPECT_EQ(loaded.ConstrainingPoint3D(constraint_id).xyz,
+            Eigen::Vector3d(1, 2, 3));
+  EXPECT_EQ(loaded.Image(image.ImageId()).Point2D(0).weight, 3.0f);
+  EXPECT_EQ(loaded.Image(image.ImageId()).Point2D(0).constraint_point_id,
+            constraint_id);
+  EXPECT_FALSE(
+      loaded.Image(image.ImageId()).Point2D(1).constraint_point_id.has_value());
+}
+
+TEST(Reconstruction, ReadBinaryMedidaV1AllowsDanglingConstraintIds) {
+  SetPRNGSeed(0);
+  Reconstruction reconstruction;
+  SyntheticDatasetOptions synthetic_dataset_options;
+  synthetic_dataset_options.num_rigs = 1;
+  synthetic_dataset_options.num_cameras_per_rig = 1;
+  synthetic_dataset_options.num_frames_per_rig = 2;
+  synthetic_dataset_options.num_points3D = 4;
+  SynthesizeDataset(synthetic_dataset_options, &reconstruction);
+
+  Image& image = reconstruction.Image(*reconstruction.RegImageIds().begin());
+  ASSERT_GT(image.NumPoints2D(), 0);
+  image.Point2D(0).constraint_point_id = 2;
+  EXPECT_TRUE(reconstruction.IsValid());
+  EXPECT_FALSE(reconstruction.ExistsConstrainingPoint3D(2));
+
+  const auto test_dir = CreateTestDir();
+  reconstruction.WriteBinaryMedidaV1(test_dir);
+
+  Reconstruction loaded;
+  loaded.ReadBinaryMedidaV1(test_dir);
+  EXPECT_TRUE(loaded.IsValid());
+  EXPECT_EQ(loaded.NumConstrainingPoints3D(), 0);
+  EXPECT_EQ(loaded.Image(image.ImageId()).Point2D(0).constraint_point_id, 2);
+}
+
 TEST(Reconstruction, ReadAutoDetectFormat) {
   SetPRNGSeed(0);
   Reconstruction reconstruction;

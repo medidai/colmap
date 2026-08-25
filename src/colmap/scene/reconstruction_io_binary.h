@@ -53,6 +53,12 @@ void ReadFramesBinary(Reconstruction& reconstruction,
 void ReadImagesBinary(Reconstruction& reconstruction, std::istream& stream);
 void ReadImagesBinary(Reconstruction& reconstruction,
                       const std::filesystem::path& path);
+// Explicit reader for Medida's pre-4.1.1 extended images.bin format. Each
+// observation stores x, y, weight, int32 constraint id, and point3D id.
+void ReadImagesBinaryMedidaV1(Reconstruction& reconstruction,
+                              std::istream& stream);
+void ReadImagesBinaryMedidaV1(Reconstruction& reconstruction,
+                              const std::filesystem::path& path);
 
 void ReadPoints3DBinary(Reconstruction& reconstruction, std::istream& stream);
 void ReadPoints3DBinary(Reconstruction& reconstruction,
@@ -77,6 +83,19 @@ void WriteImagesBinary(const Reconstruction& reconstruction,
                        std::ostream& stream);
 void WriteImagesBinary(const Reconstruction& reconstruction,
                        const std::filesystem::path& path);
+void WriteImagesBinaryMedidaV1(const Reconstruction& reconstruction,
+                               std::ostream& stream);
+void WriteImagesBinaryMedidaV1(const Reconstruction& reconstruction,
+                               const std::filesystem::path& path);
+
+void ReadConstrainingPoints3DBinaryMedidaV1(
+    Reconstruction& reconstruction, std::istream& stream);
+void ReadConstrainingPoints3DBinaryMedidaV1(
+    Reconstruction& reconstruction, const std::filesystem::path& path);
+void WriteConstrainingPoints3DBinaryMedidaV1(
+    const Reconstruction& reconstruction, std::ostream& stream);
+void WriteConstrainingPoints3DBinaryMedidaV1(
+    const Reconstruction& reconstruction, const std::filesystem::path& path);
 
 void WritePoints3DBinary(const Reconstruction& reconstruction,
                          std::ostream& stream);

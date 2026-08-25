@@ -242,13 +242,8 @@ bool Reconstruction::IsValid() const {
           return false;
         }
       }
-      if (point2D.constraint_point_id.has_value() &&
-          !ExistsConstrainingPoint3D(*point2D.constraint_point_id)) {
-        LOG(WARNING) << "Image " << image_id << " point2D " << point2D_idx
-                     << " references non-existent constraining point "
-                     << *point2D.constraint_point_id;
-        return false;
-      }
+      // Observation constraint ids may not have a matching ConstrainingPoint3D.
+      // Legacy Medida v1 models often omitted those points on disk.
     }
     if (image.NumPoints3D() != actual_num_points3D) {
       LOG(WARNING) << "Image " << image_id
@@ -1081,6 +1076,7 @@ void Reconstruction::ReadBinary(const std::filesystem::path& path) {
   frames_.clear();
   images_.clear();
   points3D_.clear();
+  constraining_points3D_.clear();
   ReadCamerasBinary(*this, path / "cameras.bin");
   const auto rigs_path = path / "rigs.bin";
   if (ExistsFile(rigs_path)) {
@@ -1093,6 +1089,32 @@ void Reconstruction::ReadBinary(const std::filesystem::path& path) {
   ReadImagesBinary(*this, path / "images.bin");
   ReadPoints3DBinary(*this, path / "points3D.bin");
   ReadMedidaDeltaBinary(*this, path);
+}
+
+void Reconstruction::ReadBinaryMedidaV1(
+    const std::filesystem::path& path) {
+  const auto sidecar_path = path / kMedidaSparseSidecarFilename;
+  THROW_CHECK(!ExistsFile(sidecar_path))
+      << "Refusing to read mixed sparse formats: found " << sidecar_path;
+  THROW_CHECK(!ExistsFile(path / "rigs.bin"))
+      << "Medida v1 sparse models must not contain rigs.bin";
+  THROW_CHECK(!ExistsFile(path / "frames.bin"))
+      << "Medida v1 sparse models must not contain frames.bin";
+  const auto constraining_points_path = path / "constraining_points3D.bin";
+  THROW_CHECK(ExistsFile(constraining_points_path))
+      << "Medida v1 sparse models require " << constraining_points_path;
+
+  cameras_.clear();
+  rigs_.clear();
+  frames_.clear();
+  images_.clear();
+  points3D_.clear();
+  constraining_points3D_.clear();
+  ReadCamerasBinary(*this, path / "cameras.bin");
+  ReadImagesBinaryMedidaV1(*this, path / "images.bin");
+  ReadPoints3DBinary(*this, path / "points3D.bin");
+  ReadConstrainingPoints3DBinaryMedidaV1(*this, constraining_points_path);
+  THROW_CHECK(IsValid()) << "Invalid Medida v1 sparse model";
 }
 
 void Reconstruction::WriteText(const std::filesystem::path& path) const {
@@ -1112,6 +1134,25 @@ void Reconstruction::WriteBinary(const std::filesystem::path& path) const {
   WriteImagesBinary(*this, path / "images.bin");
   WritePoints3DBinary(*this, path / "points3D.bin");
   WriteMedidaDeltaBinary(*this, path);
+}
+
+void Reconstruction::WriteBinaryMedidaV1(
+    const std::filesystem::path& path) const {
+  THROW_CHECK_DIR_EXISTS(path);
+  THROW_CHECK(IsValid()) << "Cannot write invalid Medida v1 sparse model";
+  THROW_CHECK(!ExistsFile(path / kMedidaSparseSidecarFilename))
+      << "Refusing to write mixed sparse formats: remove "
+      << kMedidaSparseSidecarFilename << " first";
+  THROW_CHECK(!ExistsFile(path / "rigs.bin"))
+      << "Medida v1 sparse models must not contain rigs.bin";
+  THROW_CHECK(!ExistsFile(path / "frames.bin"))
+      << "Medida v1 sparse models must not contain frames.bin";
+
+  WriteCamerasBinary(*this, path / "cameras.bin");
+  WriteImagesBinaryMedidaV1(*this, path / "images.bin");
+  WritePoints3DBinary(*this, path / "points3D.bin");
+  WriteConstrainingPoints3DBinaryMedidaV1(
+      *this, path / "constraining_points3D.bin");
 }
 
 std::vector<PlyPoint> Reconstruction::ConvertToPLY() const {
