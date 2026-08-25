@@ -1503,6 +1503,32 @@ TEST(Reconstruction, ReadWriteBinaryMedidaV1) {
       loaded.Image(image.ImageId()).Point2D(1).constraint_point_id.has_value());
 }
 
+TEST(Reconstruction, ReadBinaryMedidaV1AllowsDanglingConstraintIds) {
+  SetPRNGSeed(0);
+  Reconstruction reconstruction;
+  SyntheticDatasetOptions synthetic_dataset_options;
+  synthetic_dataset_options.num_rigs = 1;
+  synthetic_dataset_options.num_cameras_per_rig = 1;
+  synthetic_dataset_options.num_frames_per_rig = 2;
+  synthetic_dataset_options.num_points3D = 4;
+  SynthesizeDataset(synthetic_dataset_options, &reconstruction);
+
+  Image& image = reconstruction.Image(*reconstruction.RegImageIds().begin());
+  ASSERT_GT(image.NumPoints2D(), 0);
+  image.Point2D(0).constraint_point_id = 2;
+  EXPECT_TRUE(reconstruction.IsValid());
+  EXPECT_FALSE(reconstruction.ExistsConstrainingPoint3D(2));
+
+  const auto test_dir = CreateTestDir();
+  reconstruction.WriteBinaryMedidaV1(test_dir);
+
+  Reconstruction loaded;
+  loaded.ReadBinaryMedidaV1(test_dir);
+  EXPECT_TRUE(loaded.IsValid());
+  EXPECT_EQ(loaded.NumConstrainingPoints3D(), 0);
+  EXPECT_EQ(loaded.Image(image.ImageId()).Point2D(0).constraint_point_id, 2);
+}
+
 TEST(Reconstruction, ReadAutoDetectFormat) {
   SetPRNGSeed(0);
   Reconstruction reconstruction;

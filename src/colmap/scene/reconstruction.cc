@@ -242,13 +242,8 @@ bool Reconstruction::IsValid() const {
           return false;
         }
       }
-      if (point2D.constraint_point_id.has_value() &&
-          !ExistsConstrainingPoint3D(*point2D.constraint_point_id)) {
-        LOG(WARNING) << "Image " << image_id << " point2D " << point2D_idx
-                     << " references non-existent constraining point "
-                     << *point2D.constraint_point_id;
-        return false;
-      }
+      // Observation constraint ids may not have a matching ConstrainingPoint3D.
+      // Legacy Medida v1 models often omitted those points on disk.
     }
     if (image.NumPoints3D() != actual_num_points3D) {
       LOG(WARNING) << "Image " << image_id
