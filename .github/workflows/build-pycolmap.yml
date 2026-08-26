@@ -15,14 +15,6 @@ on:
       - "pycolmap/**"
       - "src/**"
       - "vcpkg.json"
-  pull_request:
-    paths:
-      - ".github/workflows/build-pycolmap.yml"
-      - "CMakeLists.txt"
-      - "cmake/**"
-      - "pycolmap/**"
-      - "src/**"
-      - "vcpkg.json"
   workflow_dispatch:
     inputs:
       publish:
