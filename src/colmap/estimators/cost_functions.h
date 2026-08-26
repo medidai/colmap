@@ -396,6 +396,70 @@ struct AbsolutePosePriorCostFunctor
   const Rigid3d world_from_cam_prior_;
 };
 
+struct WeightedAbsolutePosePriorCostFunctor
+    : public AutoDiffCostFunctor<WeightedAbsolutePosePriorCostFunctor,
+                                 6,
+                                 4,
+                                 3> {
+ public:
+  WeightedAbsolutePosePriorCostFunctor(const Rigid3d& cam_from_world_prior,
+                                       const double sqrt_rotation_weight,
+                                       const double sqrt_translation_weight)
+      : world_from_cam_prior_(Inverse(cam_from_world_prior)),
+        sqrt_rotation_weight_(sqrt_rotation_weight),
+        sqrt_translation_weight_(sqrt_translation_weight) {}
+
+  template <typename T>
+  bool operator()(const T* const cam_from_world_rotation,
+                  const T* const cam_from_world_translation,
+                  T* residuals_ptr) const {
+    const Eigen::Quaternion<T> param_from_prior_rotation =
+        EigenQuaternionMap<T>(cam_from_world_rotation) *
+        world_from_cam_prior_.rotation.cast<T>();
+    EigenQuaternionToAngleAxis(param_from_prior_rotation.coeffs().data(),
+                               residuals_ptr);
+    for (int i = 0; i < 3; ++i) {
+      residuals_ptr[i] *= T(sqrt_rotation_weight_);
+    }
+
+    Eigen::Map<Eigen::Matrix<T, 3, 1>> param_from_prior_translation(
+        residuals_ptr + 3);
+    param_from_prior_translation =
+        T(sqrt_translation_weight_) *
+        (EigenVector3Map<T>(cam_from_world_translation) +
+         EigenQuaternionMap<T>(cam_from_world_rotation) *
+             world_from_cam_prior_.translation.cast<T>());
+
+    return true;
+  }
+
+ private:
+  const Rigid3d world_from_cam_prior_;
+  const double sqrt_rotation_weight_;
+  const double sqrt_translation_weight_;
+};
+
+struct PointToPlaneCostFunctor
+    : public AutoDiffCostFunctor<PointToPlaneCostFunctor, 1, 3, 1, 3> {
+ public:
+  explicit PointToPlaneCostFunctor(const double sqrt_weight)
+      : sqrt_weight_(sqrt_weight) {}
+
+  template <typename T>
+  bool operator()(const T* const normal,
+                  const T* const offset,
+                  const T* const xyz,
+                  T* residuals) const {
+    residuals[0] =
+        T(sqrt_weight_) *
+        (EigenVector3Map<T>(normal).dot(EigenVector3Map<T>(xyz)) - offset[0]);
+    return true;
+  }
+
+ private:
+  const double sqrt_weight_;
+};
+
 // 3-DoF error on the camera position in the world coordinate frame.
 struct AbsolutePosePositionPriorCostFunctor
     : public AutoDiffCostFunctor<AbsolutePosePositionPriorCostFunctor,

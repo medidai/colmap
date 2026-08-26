@@ -375,6 +375,38 @@ bool BundleAdjustmentOptions::Check() const {
   return true;
 }
 
+bool ParallelPlaneBundleAdjustmentOptions::Check(
+    const Reconstruction& reconstruction) const {
+  CHECK_OPTION_GT(plane_weight, 0);
+  CHECK_OPTION_GT(plane_loss_scale, 0);
+  CHECK_OPTION_GE(rotation_prior_weight, 0);
+  CHECK_OPTION_GE(translation_prior_weight, 0);
+  if (!normal.allFinite() || std::abs(normal.norm() - 1.0) > 1e-6 ||
+      !std::isfinite(offsets[0]) || !std::isfinite(offsets[1]) ||
+      point3D_ids[0].empty() || point3D_ids[1].empty()) {
+    return false;
+  }
+
+  std::unordered_set<point3D_t> unique_point3D_ids;
+  for (const auto& plane_point3D_ids : point3D_ids) {
+    for (const point3D_t point3D_id : plane_point3D_ids) {
+      if (!reconstruction.ExistsPoint3D(point3D_id) ||
+          !unique_point3D_ids.insert(point3D_id).second) {
+        return false;
+      }
+    }
+  }
+  for (const auto& [image_id, pose_prior] : pose_priors) {
+    if (!reconstruction.ExistsImage(image_id) ||
+        !reconstruction.Image(image_id).HasPose() ||
+        !pose_prior.rotation.coeffs().allFinite() ||
+        !pose_prior.translation.allFinite()) {
+      return false;
+    }
+  }
+  return true;
+}
+
 namespace {
 
 void ParameterizeCameras(const BundleAdjustmentOptions& options,
@@ -633,6 +665,76 @@ class DefaultBundleAdjuster : public BundleAdjuster {
 
   std::unordered_set<camera_t> camera_ids_;
   std::unordered_map<point3D_t, size_t> point3D_num_observations_;
+};
+
+class ParallelPlaneBundleAdjuster : public BundleAdjuster {
+ public:
+  ParallelPlaneBundleAdjuster(
+      BundleAdjustmentOptions options,
+      ParallelPlaneBundleAdjustmentOptions plane_options,
+      BundleAdjustmentConfig config,
+      Reconstruction& reconstruction)
+      : BundleAdjuster(options, config),
+        plane_options_(std::move(plane_options)),
+        normal_(plane_options_.normal),
+        offsets_(plane_options_.offsets),
+        plane_loss_function_(std::make_unique<ceres::CauchyLoss>(
+            plane_options_.plane_loss_scale)),
+        default_bundle_adjuster_(std::make_unique<DefaultBundleAdjuster>(
+            std::move(options), std::move(config), reconstruction)) {
+    std::shared_ptr<ceres::Problem>& problem =
+        default_bundle_adjuster_->Problem();
+    const double sqrt_plane_weight = std::sqrt(plane_options_.plane_weight);
+    for (size_t plane_idx = 0; plane_idx < plane_options_.point3D_ids.size();
+         ++plane_idx) {
+      for (const point3D_t point3D_id : plane_options_.point3D_ids[plane_idx]) {
+        double* xyz = reconstruction.Point3D(point3D_id).xyz.data();
+        THROW_CHECK(problem->HasParameterBlock(xyz));
+        problem->AddResidualBlock(
+            PointToPlaneCostFunctor::Create(sqrt_plane_weight),
+            plane_loss_function_.get(),
+            normal_.data(),
+            &offsets_[plane_idx],
+            xyz);
+      }
+    }
+    SetSphereManifold<3>(problem.get(), normal_.data());
+
+    const double sqrt_rotation_weight =
+        std::sqrt(plane_options_.rotation_prior_weight);
+    const double sqrt_translation_weight =
+        std::sqrt(plane_options_.translation_prior_weight);
+    if (sqrt_rotation_weight > 0.0 || sqrt_translation_weight > 0.0) {
+      for (const auto& [image_id, pose_prior] : plane_options_.pose_priors) {
+        Image& image = reconstruction.Image(image_id);
+        double* rotation = image.CamFromWorld().rotation.coeffs().data();
+        double* translation = image.CamFromWorld().translation.data();
+        THROW_CHECK(problem->HasParameterBlock(rotation));
+        THROW_CHECK(problem->HasParameterBlock(translation));
+        problem->AddResidualBlock(
+            WeightedAbsolutePosePriorCostFunctor::Create(
+                pose_prior, sqrt_rotation_weight, sqrt_translation_weight),
+            nullptr,
+            rotation,
+            translation);
+      }
+    }
+  }
+
+  ceres::Solver::Summary Solve() override {
+    return default_bundle_adjuster_->Solve();
+  }
+
+  std::shared_ptr<ceres::Problem>& Problem() override {
+    return default_bundle_adjuster_->Problem();
+  }
+
+ private:
+  const ParallelPlaneBundleAdjustmentOptions plane_options_;
+  Eigen::Vector3d normal_;
+  std::array<double, 2> offsets_;
+  std::unique_ptr<ceres::LossFunction> plane_loss_function_;
+  std::unique_ptr<DefaultBundleAdjuster> default_bundle_adjuster_;
 };
 
 class RigBundleAdjuster : public BundleAdjuster {
@@ -1153,6 +1255,18 @@ std::unique_ptr<BundleAdjuster> CreateDefaultBundleAdjuster(
     Reconstruction& reconstruction) {
   return std::make_unique<DefaultBundleAdjuster>(
       std::move(options), std::move(config), reconstruction);
+}
+
+std::unique_ptr<BundleAdjuster> CreateParallelPlaneBundleAdjuster(
+    BundleAdjustmentOptions options,
+    ParallelPlaneBundleAdjustmentOptions plane_options,
+    BundleAdjustmentConfig config,
+    Reconstruction& reconstruction) {
+  THROW_CHECK(plane_options.Check(reconstruction));
+  return std::make_unique<ParallelPlaneBundleAdjuster>(std::move(options),
+                                                       std::move(plane_options),
+                                                       std::move(config),
+                                                       reconstruction);
 }
 
 std::unique_ptr<BundleAdjuster> CreateRigBundleAdjuster(
