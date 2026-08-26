@@ -33,7 +33,9 @@
 #include "colmap/scene/reconstruction.h"
 #include "colmap/util/eigen_alignment.h"
 
+#include <array>
 #include <memory>
+#include <unordered_map>
 #include <unordered_set>
 
 #include <Eigen/Core>
@@ -212,6 +214,19 @@ struct PosePriorBundleAdjustmentOptions {
   double ransac_max_error = 0.;
 };
 
+struct ParallelPlaneBundleAdjustmentOptions {
+  std::array<std::vector<point3D_t>, 2> point3D_ids;
+  Eigen::Vector3d normal = Eigen::Vector3d::UnitZ();
+  std::array<double, 2> offsets = {0.0, 0.0};
+  double plane_weight = 1.0;
+  double plane_loss_scale = 0.01;
+  double rotation_prior_weight = 0.0;
+  double translation_prior_weight = 0.0;
+  std::unordered_map<image_t, Rigid3d> pose_priors;
+
+  bool Check(const Reconstruction& reconstruction) const;
+};
+
 class BundleAdjuster {
  public:
   BundleAdjuster(BundleAdjustmentOptions options,
@@ -231,6 +246,12 @@ class BundleAdjuster {
 
 std::unique_ptr<BundleAdjuster> CreateDefaultBundleAdjuster(
     BundleAdjustmentOptions options,
+    BundleAdjustmentConfig config,
+    Reconstruction& reconstruction);
+
+std::unique_ptr<BundleAdjuster> CreateParallelPlaneBundleAdjuster(
+    BundleAdjustmentOptions options,
+    ParallelPlaneBundleAdjustmentOptions plane_options,
     BundleAdjustmentConfig config,
     Reconstruction& reconstruction);
 

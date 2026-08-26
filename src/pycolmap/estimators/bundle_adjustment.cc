@@ -161,6 +161,36 @@ void BindBundleAdjuster(py::module& m) {
                          "Maximum RANSAC error for Sim3 alignment.");
   MakeDataclass(PyPosePriorBundleAdjustmentOptions);
 
+  using ParallelPlaneBAOpts = ParallelPlaneBundleAdjustmentOptions;
+  auto PyParallelPlaneBundleAdjustmentOptions =
+      py::class_<ParallelPlaneBAOpts>(m, "ParallelPlaneBundleAdjustmentOptions")
+          .def(py::init<>())
+          .def_readwrite("point3D_ids",
+                         &ParallelPlaneBAOpts::point3D_ids,
+                         "Two point-ID groups, one for each plane.")
+          .def_readwrite("normal",
+                         &ParallelPlaneBAOpts::normal,
+                         "Initial shared unit normal.")
+          .def_readwrite("offsets",
+                         &ParallelPlaneBAOpts::offsets,
+                         "Initial independent plane offsets.")
+          .def_readwrite("plane_weight",
+                         &ParallelPlaneBAOpts::plane_weight,
+                         "Point-to-plane residual weight.")
+          .def_readwrite("plane_loss_scale",
+                         &ParallelPlaneBAOpts::plane_loss_scale,
+                         "Cauchy loss scale for point-to-plane residuals.")
+          .def_readwrite("rotation_prior_weight",
+                         &ParallelPlaneBAOpts::rotation_prior_weight,
+                         "Camera rotation-prior weight.")
+          .def_readwrite("translation_prior_weight",
+                         &ParallelPlaneBAOpts::translation_prior_weight,
+                         "Camera translation-prior weight.")
+          .def_readwrite("pose_priors",
+                         &ParallelPlaneBAOpts::pose_priors,
+                         "Baseline camera poses keyed by image ID.");
+  MakeDataclass(PyParallelPlaneBundleAdjustmentOptions);
+
   class PyBundleAdjuster : public BundleAdjuster {
    public:
     PyBundleAdjuster(BundleAdjustmentOptions options,
@@ -189,6 +219,13 @@ void BindBundleAdjuster(py::module& m) {
   m.def("create_default_bundle_adjuster",
         CreateDefaultBundleAdjuster,
         "options"_a,
+        "config"_a,
+        "reconstruction"_a);
+
+  m.def("create_parallel_plane_bundle_adjuster",
+        CreateParallelPlaneBundleAdjuster,
+        "options"_a,
+        "plane_options"_a,
         "config"_a,
         "reconstruction"_a);
 
