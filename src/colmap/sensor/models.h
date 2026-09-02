@@ -104,7 +104,8 @@ MAKE_ENUM_CLASS_OVERLOAD_STREAM(CameraModelId,
                                 kSimpleFisheye,           // = 14
                                 kFisheye,                 // = 15
                                 kEUCM,                    // = 16
-                                kEquirectangular          // = 17
+                                kEquirectangular,         // = 17
+                                kRadial3                  // = 18
 );
 
 // Definitions shared by all camera models (perspective and spherical alike).
@@ -209,6 +210,7 @@ MAKE_ENUM_CLASS_OVERLOAD_STREAM(CameraModelId,
   CAMERA_MODEL_CASE(SimpleRadialCameraModel)        \
   CAMERA_MODEL_CASE(SimpleRadialFisheyeCameraModel) \
   CAMERA_MODEL_CASE(RadialCameraModel)              \
+  CAMERA_MODEL_CASE(Radial3CameraModel)             \
   CAMERA_MODEL_CASE(RadialFisheyeCameraModel)       \
   CAMERA_MODEL_CASE(OpenCVCameraModel)              \
   CAMERA_MODEL_CASE(OpenCVFisheyeCameraModel)       \
@@ -482,6 +484,21 @@ struct RadialCameraModel
     : public BasePerspectiveCameraModel<RadialCameraModel> {
   PERSPECTIVE_CAMERA_MODEL_DEFINITIONS(
       CameraModelId::kRadial, "RADIAL", 1, 2, 2, false)
+};
+
+// Simple camera model with one focal length and three radial distortion
+// parameters.
+//
+// This model is equivalent to `RADIAL` with an additional k3 coefficient.
+//
+// Parameter list is expected in the following order:
+//
+//    f, cx, cy, k1, k2, k3
+//
+struct Radial3CameraModel
+    : public BasePerspectiveCameraModel<Radial3CameraModel> {
+  PERSPECTIVE_CAMERA_MODEL_DEFINITIONS(
+      CameraModelId::kRadial3, "RADIAL_3", 1, 2, 3, false)
 };
 
 // OpenCV camera model.
@@ -1448,6 +1465,86 @@ void RadialCameraModel::Distortion(
   const T v2 = v * v;
   const T r2 = u2 + v2;
   const T radial = k1 * r2 + k2 * r2 * r2;
+  *du = u * radial;
+  *dv = v * radial;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Radial3CameraModel
+
+std::string Radial3CameraModel::InitializeParamsInfo() {
+  return "f, cx, cy, k1, k2, k3";
+}
+
+std::array<size_t, 1> Radial3CameraModel::InitializeFocalLengthIdxs() {
+  return {0};
+}
+
+std::array<size_t, 2> Radial3CameraModel::InitializePrincipalPointIdxs() {
+  return {1, 2};
+}
+
+std::array<size_t, 3> Radial3CameraModel::InitializeExtraParamsIdxs() {
+  return {3, 4, 5};
+}
+
+std::vector<double> Radial3CameraModel::InitializeParams(
+    const double focal_length, const size_t width, const size_t height) {
+  return {focal_length, width / 2.0, height / 2.0, 0, 0, 0};
+}
+
+template <typename T>
+bool Radial3CameraModel::ImgFromCam(
+    const T* params, const T& u, const T& v, const T& w, T* x, T* y) {
+  if (w < std::numeric_limits<T>::epsilon()) {
+    return false;
+  }
+
+  const T f = params[0];
+  const T c1 = params[1];
+  const T c2 = params[2];
+
+  const T uu = u / w;
+  const T vv = v / w;
+
+  // Distortion
+  T du, dv;
+  Distortion(&params[3], uu, vv, &du, &dv);
+  *x = uu + du;
+  *y = vv + dv;
+
+  // Transform to image coordinates
+  *x = f * *x + c1;
+  *y = f * *y + c2;
+
+  return true;
+}
+
+bool Radial3CameraModel::CamFromImg(
+    const double* params, double x, double y, double* u, double* v) {
+  const double f = params[0];
+  const double c1 = params[1];
+  const double c2 = params[2];
+
+  // Lift points to normalized plane
+  *u = (x - c1) / f;
+  *v = (y - c2) / f;
+
+  return IterativeUndistortion(&params[3], u, v);
+}
+
+template <typename T>
+void Radial3CameraModel::Distortion(
+    const T* extra_params, const T& u, const T& v, T* du, T* dv) {
+  const T k1 = extra_params[0];
+  const T k2 = extra_params[1];
+  const T k3 = extra_params[2];
+
+  const T u2 = u * u;
+  const T v2 = v * v;
+  const T r2 = u2 + v2;
+  const T r4 = r2 * r2;
+  const T radial = k1 * r2 + k2 * r4 + k3 * r4 * r2;
   *du = u * radial;
   *dv = v * radial;
 }

@@ -85,6 +85,7 @@ class Model:
                 pycolmap.CameraModelId.SIMPLE_PINHOLE,
                 pycolmap.CameraModelId.SIMPLE_RADIAL,
                 pycolmap.CameraModelId.RADIAL,
+                pycolmap.CameraModelId.RADIAL_3,
             ):
                 fx = fy = cam.params[0]
                 cx = cam.params[1]
