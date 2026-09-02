@@ -35,7 +35,12 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
 endif()
 
 # vcpkg's FreeImage config omits its lcms2 dependency.
-find_package(lcms2 CONFIG REQUIRED)
+# Homebrew little-cms2 does not ship a CMake package, and FreeImage already
+# links lcms2 there.
+if(DEFINED VCPKG_TOOLCHAIN OR DEFINED VCPKG_TARGET_TRIPLET OR
+   CMAKE_TOOLCHAIN_FILE MATCHES "vcpkg")
+  find_package(lcms2 CONFIG REQUIRED)
+endif()
 
 find_package(gflags CONFIG REQUIRED)
 # vcpkg exports Ceres and glog with different gflags target names.
