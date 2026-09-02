@@ -86,7 +86,12 @@ class Model:
             # intrinsics
             cam = self.cameras[img.camera_id]
 
-            if cam.model in ("SIMPLE_PINHOLE", "SIMPLE_RADIAL", "RADIAL"):
+            if cam.model in (
+                "SIMPLE_PINHOLE",
+                "SIMPLE_RADIAL",
+                "RADIAL",
+                "RADIAL_3",
+            ):
                 fx = fy = cam.params[0]
                 cx = cam.params[1]
                 cy = cam.params[2]

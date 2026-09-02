@@ -9,11 +9,11 @@ model that is complex enough to model the distortion effects:
   undistorted a priori. These use one and two focal length parameters,
   respectively. Note that even in the case of undistorted images, COLMAP could
   try to improve the intrinsics with a more complex camera model.
-- `SIMPLE_RADIAL`, `RADIAL`: This should be the camera model of choice, if the
-  intrinsics are unknown and every image has a different camera calibration,
-  e.g., in the case of Internet photos. Both models are simplified versions of
-  the `OPENCV` model only modeling radial distortion effects with one and two
-  parameters, respectively.
+- `SIMPLE_RADIAL`, `RADIAL`, `RADIAL_3`: This should be the camera model of
+  choice, if the intrinsics are unknown and every image has a different camera
+  calibration, e.g., in the case of Internet photos. These models are simplified
+  versions of the `OPENCV` model only modeling radial distortion effects with
+  one, two, or three parameters, respectively.
 - `OPENCV`, `FULL_OPENCV`: Use these camera models, if you know the calibration
   parameters a priori. You can also try to let COLMAP estimate the parameters,
   if you share the intrinsics for multiple images. Note that the automatic
