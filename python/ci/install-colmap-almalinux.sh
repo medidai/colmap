@@ -27,7 +27,9 @@ yum install -y \
     unzip \
     tar \
     xz \
+    perl-core \
     perl-IPC-Cmd \
+    perl-Time-Piece \
     kernel-headers \
     libglvnd-devel \
     mesa-libGLU-devel
