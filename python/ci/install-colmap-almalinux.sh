@@ -26,7 +26,11 @@ yum install -y \
     zip \
     unzip \
     tar \
-    xz
+    xz \
+    perl-IPC-Cmd \
+    kernel-headers \
+    libglvnd-devel \
+    mesa-libGLU-devel
 
 set +u
 source scl_source enable gcc-toolset-12

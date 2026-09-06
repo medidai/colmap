@@ -147,12 +147,7 @@ jobs:
             --env VCPKG_COMMIT_ID \
             --env VCPKG_TARGET_TRIPLET=x64-linux-release \
             "${{ matrix.image }}" \
-            bash -c '
-              if [[ "${BUILD_CUDA_ENABLED}" == "true" ]]; then
-                yum install -y libglvnd-devel mesa-libGLU-devel
-              fi
-              exec bash python/ci/install-colmap-almalinux.sh /opt/pycolmap-native
-            '
+            bash python/ci/install-colmap-almalinux.sh /opt/pycolmap-native
       - name: Validate and archive native prefix
         run: |
           set -euo pipefail
@@ -395,9 +390,12 @@ jobs:
           CIBW_CONFIG_SETTINGS: >-
             cmake.define.CMAKE_OSX_ARCHITECTURES=arm64
             cmake.define.CMAKE_OSX_DEPLOYMENT_TARGET=15.0
+            cmake.args=-C${{ github.workspace }}/python/ci/macos-openmp.cmake
           CIBW_ENVIRONMENT_MACOS: >-
-            CMAKE_PREFIX_PATH=/Users/runner/work/pycolmap-native/colmap:/Users/runner/work/pycolmap-native/vcpkg_installed/arm64-osx-release
+            CMAKE_ARGS=-C${{ github.workspace }}/python/ci/macos-openmp.cmake
+            CMAKE_PREFIX_PATH=/Users/runner/work/pycolmap-native/colmap:/Users/runner/work/pycolmap-native/vcpkg_installed/arm64-osx-release:/opt/homebrew/opt/libomp
             MACOSX_DEPLOYMENT_TARGET=15.0
+            OpenMP_ROOT=/opt/homebrew/opt/libomp
             REPAIR_LIBRARY_PATH=/opt/homebrew/opt/libomp/lib
           CIBW_TEST_SKIP: "*"
         with:

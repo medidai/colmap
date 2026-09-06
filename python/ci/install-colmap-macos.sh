@@ -22,6 +22,11 @@ if ! command -v gfortran >/dev/null; then
     sudo ln -sf "${GFORTRAN_PATH}" "$(brew --prefix)/bin/gfortran"
 fi
 
+LIBOMP_PREFIX="$(brew --prefix libomp)"
+test -d "${LIBOMP_PREFIX}"
+test -f "${SOURCE_DIR}/python/ci/macos-openmp.cmake"
+export OpenMP_ROOT="${LIBOMP_PREFIX}"
+
 if [ ! -d "${VCPKG_ROOT}/.git" ]; then
     git clone --filter=blob:none https://github.com/microsoft/vcpkg "${VCPKG_ROOT}"
 fi
@@ -46,6 +51,7 @@ export VCPKG_DISABLE_METRICS=1
 
 rm -rf "${BUILD_DIR}"
 "$(brew --prefix cmake)/bin/cmake" -S "${SOURCE_DIR}" -B "${BUILD_DIR}" -GNinja \
+    -C "${SOURCE_DIR}/python/ci/macos-openmp.cmake" \
     -DCUDA_ENABLED=OFF \
     -DONNX_ENABLED=OFF \
     -DGUI_ENABLED=OFF \
