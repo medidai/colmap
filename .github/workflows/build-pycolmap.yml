@@ -331,7 +331,7 @@ jobs:
           echo "CIBW_MANYLINUX_X86_64_IMAGE=${{ matrix.image }}" >> "${GITHUB_ENV}"
           echo "CIBW_BEFORE_ALL_LINUX=yum install -y cmake3 gcc-toolset-12-gcc gcc-toolset-12-gcc-c++ libglvnd-devel mesa-libGLU-devel scl-utils" >> "${GITHUB_ENV}"
           echo "CIBW_CONTAINER_ENGINE=docker; create_args: -v ${GITHUB_WORKSPACE}/native-prefix:/opt/pycolmap-native:ro" >> "${GITHUB_ENV}"
-          echo "CIBW_ENVIRONMENT_LINUX=PATH=/opt/pycolmap-native/tools/bin:\$PATH CC=/opt/rh/gcc-toolset-12/root/usr/bin/gcc CXX=/opt/rh/gcc-toolset-12/root/usr/bin/g++ CMAKE_PREFIX_PATH=/opt/pycolmap-native/colmap:/opt/pycolmap-native/vcpkg_installed/x64-linux-release CMAKE_CUDA_ARCHITECTURES=89" >> "${GITHUB_ENV}"
+          echo "CIBW_ENVIRONMENT_LINUX=PATH=/opt/pycolmap-native/tools/bin:\$PATH CC=/opt/rh/gcc-toolset-12/root/usr/bin/gcc CXX=/opt/rh/gcc-toolset-12/root/usr/bin/g++ CMAKE_PREFIX_PATH=/opt/pycolmap-native/colmap:/opt/pycolmap-native/vcpkg_installed/x64-linux-release LIBRARY_PATH=/opt/pycolmap-native/vcpkg_installed/x64-linux-release/lib LDFLAGS=-L/opt/pycolmap-native/vcpkg_installed/x64-linux-release/lib CMAKE_CUDA_ARCHITECTURES=89" >> "${GITHUB_ENV}"
           echo "CIBW_TEST_SKIP=*" >> "${GITHUB_ENV}"
           if [[ "${{ matrix.cuda }}" == "true" ]]; then
             echo "CIBW_REPAIR_WHEEL_COMMAND=auditwheel repair --exclude 'libcudart*' --exclude 'libcurand*' -w {dest_dir} {wheel}" >> "${GITHUB_ENV}"
@@ -394,6 +394,8 @@ jobs:
           CIBW_ENVIRONMENT_MACOS: >-
             CMAKE_ARGS=-C${{ github.workspace }}/python/ci/macos-openmp.cmake
             CMAKE_PREFIX_PATH=/Users/runner/work/pycolmap-native/colmap:/Users/runner/work/pycolmap-native/vcpkg_installed/arm64-osx-release:/opt/homebrew/opt/libomp
+            LIBRARY_PATH=/Users/runner/work/pycolmap-native/vcpkg_installed/arm64-osx-release/lib
+            LDFLAGS=-L/Users/runner/work/pycolmap-native/vcpkg_installed/arm64-osx-release/lib
             MACOSX_DEPLOYMENT_TARGET=15.0
             OpenMP_ROOT=/opt/homebrew/opt/libomp
             REPAIR_LIBRARY_PATH=/opt/homebrew/opt/libomp/lib
