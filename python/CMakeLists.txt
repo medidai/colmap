@@ -30,6 +30,16 @@ elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES ".*
     endif()
 endif()
 
+set(GFLAGS_USE_TARGET_NAMESPACE ON)
+find_package(gflags CONFIG REQUIRED)
+if(NOT TARGET gflags::gflags)
+    if(TARGET gflags)
+        add_library(gflags::gflags ALIAS gflags)
+    elseif(TARGET gflags_static)
+        add_library(gflags::gflags ALIAS gflags_static)
+    endif()
+endif()
+
 find_package(colmap REQUIRED)
 
 if(CCACHE_ENABLED)
