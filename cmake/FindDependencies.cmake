@@ -42,6 +42,9 @@ find_package(Git)
 
 find_package(CHOLMOD REQUIRED)
 
+# glog's imported target requires gflags::gflags before Ceres loads glog-config.
+find_package(gflags CONFIG ${COLMAP_FIND_TYPE})
+
 # Ceres is found before Glog on purpose. Some distributions (e.g. Fedora) ship a
 # Ceres whose bundled FindGlog.cmake unconditionally calls add_library(glog::glog)
 # in module mode. If we created the glog::glog target first, that call collides

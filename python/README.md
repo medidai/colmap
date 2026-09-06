@@ -4,13 +4,22 @@ PyCOLMAP exposes to Python most capabilities of the [COLMAP](https://colmap.gith
 
 ## Installation
 
-Pre-built wheels for Linux, macOS, and Windows can be installed using pip:
+Medida publishes CPython 3.12 wheels for Linux x86-64 and macOS arm64 to the
+private `medida/python` CodeArtifact repository. Linux has separate `pycolmap`
+CPU and `pycolmap-cuda12` distributions; projects select one of them through
+their uv dependency groups.
+
+The Python project and its development tools are managed by uv from the
+repository root. To prepare the locked tooling environment without building
+the native extension:
 
 ```bash
-pip install pycolmap
+uv sync --no-install-project
 ```
 
-The wheels are automatically built and pushed to [PyPI](https://pypi.org/project/pycolmap/) at each release. To benefit from GPU acceleration, wheels built for CUDA 12 (only for Linux - for now) are available under the [package `pycolmap-cuda12`](https://pypi.org/project/pycolmap-cuda12/).
+Installing the project itself requires a compatible COLMAP installation. The
+release workflow builds COLMAP and the wheels in isolated cibuildwheel
+environments before publishing them to CodeArtifact.
 
 <details>
 <summary>[Building PyCOLMAP from source - click to expand]</summary>
@@ -20,13 +29,13 @@ The wheels are automatically built and pushed to [PyPI](https://pypi.org/project
 2. Build PyCOLMAP:
    - On Linux and macOS:
      ```bash
-     python -m pip install .
+     uv sync
      ```
    - On Windows, after installing COLMAP [via VCPKG](https://colmap.github.io/install.html#id3), run in powershell:
      ```powershell
-     python -m pip install . `
-         --cmake.define.CMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" `
-         --cmake.define.VCPKG_TARGET_TRIPLET="x64-windows"
+     uv sync `
+         --config-setting "cmake.define.CMAKE_TOOLCHAIN_FILE=$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" `
+         --config-setting "cmake.define.VCPKG_TARGET_TRIPLET=x64-windows"
      ```
 
 </details>
