@@ -85,6 +85,31 @@ void BindIncrementalPipeline(py::module& m) {
           "ba_refine_extra_params",
           &Opts::ba_refine_extra_params,
           "Which intrinsic parameters to optimize during the reconstruction.")
+      .def_readwrite("ba_apply_constraints",
+                     &Opts::ba_apply_constraints,
+                     "Whether to apply constraining point residuals.")
+      .def_readwrite("ba_apply_virtual_tracks",
+                     &Opts::ba_apply_virtual_tracks,
+                     "Whether to add virtual track residuals to bundle "
+                     "adjustment (requires virtual_tracks_path).")
+      .def_readwrite("virtual_tracks_path",
+                     &Opts::virtual_tracks_path,
+                     "Path to the virtual tracks text file.")
+      .def_readwrite("ba_virtual_loss_scale",
+                     &Opts::ba_virtual_loss_scale,
+                     "Arctan loss saturation for virtual residuals in pixels.")
+      .def_readwrite("ba_virtual_max_angular_error_deg",
+                     &Opts::ba_virtual_max_angular_error_deg,
+                     "Maximum angular reprojection error in degrees for a "
+                     "virtual observation to be used.")
+      .def_readwrite("ba_virtual_min_tri_angle_deg",
+                     &Opts::ba_virtual_min_tri_angle_deg,
+                     "Minimum triangulation angle in degrees for a virtual "
+                     "track to be used.")
+      .def_readwrite("ba_virtual_max_num_per_image",
+                     &Opts::ba_virtual_max_num_per_image,
+                     "Maximum number of virtual residuals per image "
+                     "(0 = unlimited).")
       .def_readwrite(
           "ba_min_num_residuals_for_cpu_multi_threading",
           &Opts::ba_min_num_residuals_for_cpu_multi_threading,
@@ -312,6 +337,22 @@ void BindIncrementalMapperOptions(py::module& m) {
                      "If reconstruction is provided as input, fix the existing "
                      "image poses.")
       .def_readwrite("num_threads", &Opts::num_threads, "Number of threads.")
+      .def_readwrite("apply_virtual_tracks",
+                     &Opts::apply_virtual_tracks,
+                     "Whether to add loaded virtual track residuals to local "
+                     "and global bundle adjustment.")
+      .def_readwrite("virtual_max_angular_error_deg",
+                     &Opts::virtual_max_angular_error_deg,
+                     "Maximum angular reprojection error in degrees for a "
+                     "virtual observation to be used.")
+      .def_readwrite("virtual_min_tri_angle_deg",
+                     &Opts::virtual_min_tri_angle_deg,
+                     "Minimum triangulation angle in degrees for a virtual "
+                     "track to be used.")
+      .def_readwrite("virtual_max_num_per_image",
+                     &Opts::virtual_max_num_per_image,
+                     "Maximum number of virtual residuals per image "
+                     "(0 = unlimited).")
       .def_readwrite("image_selection_method",
                      &Opts::image_selection_method,
                      "Method to find and select next best image to register.");

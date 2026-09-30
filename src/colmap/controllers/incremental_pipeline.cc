@@ -89,6 +89,10 @@ IncrementalMapper::Options IncrementalPipelineOptions::Mapper() const {
   options.use_prior_position = use_prior_position;
   options.use_robust_loss_on_prior_position = use_robust_loss_on_prior_position;
   options.prior_position_loss_scale = prior_position_loss_scale;
+  options.apply_virtual_tracks = ba_apply_virtual_tracks;
+  options.virtual_max_angular_error_deg = ba_virtual_max_angular_error_deg;
+  options.virtual_min_tri_angle_deg = ba_virtual_min_tri_angle_deg;
+  options.virtual_max_num_per_image = ba_virtual_max_num_per_image;
   return options;
 }
 
@@ -119,6 +123,8 @@ BundleAdjustmentOptions IncrementalPipelineOptions::LocalBundleAdjustment()
   options.refine_principal_point = ba_refine_principal_point;
   options.refine_extra_params = ba_refine_extra_params;
   options.apply_constraints = ba_apply_constraints;
+  options.apply_virtual_tracks = ba_apply_virtual_tracks;
+  options.virtual_loss_scale = ba_virtual_loss_scale;
   options.min_num_residuals_for_cpu_multi_threading =
       ba_min_num_residuals_for_cpu_multi_threading;
   options.loss_function_scale = 1.0;
@@ -152,6 +158,8 @@ BundleAdjustmentOptions IncrementalPipelineOptions::GlobalBundleAdjustment()
   options.refine_principal_point = ba_refine_principal_point;
   options.refine_extra_params = ba_refine_extra_params;
   options.apply_constraints = ba_apply_constraints;
+  options.apply_virtual_tracks = ba_apply_virtual_tracks;
+  options.virtual_loss_scale = ba_virtual_loss_scale;
   options.min_num_residuals_for_cpu_multi_threading =
       ba_min_num_residuals_for_cpu_multi_threading;
   options.loss_function_type =
@@ -183,6 +191,8 @@ bool IncrementalPipelineOptions::Check() const {
   CHECK_OPTION_GE(ba_global_max_refinement_change, 0);
   CHECK_OPTION_GE(snapshot_images_freq, 0);
   CHECK_OPTION_GT(prior_position_loss_scale, 0.);
+  CHECK_OPTION_GT(ba_virtual_loss_scale, 0.);
+  CHECK_OPTION(!ba_apply_virtual_tracks || !virtual_tracks_path.empty());
   CHECK_OPTION(Mapper().Check());
   CHECK_OPTION(Triangulation().Check());
   return true;
@@ -346,6 +356,9 @@ IncrementalPipeline::Status IncrementalPipeline::ReconstructSubModel(
     const IncrementalMapper::Options& mapper_options,
     const std::shared_ptr<Reconstruction>& reconstruction) {
   mapper.BeginReconstruction(reconstruction);
+  if (options_->ba_apply_virtual_tracks) {
+    mapper.LoadVirtualTracks(options_->virtual_tracks_path);
+  }
 
   ////////////////////////////////////////////////////////////////////////////
   // Register initial pair

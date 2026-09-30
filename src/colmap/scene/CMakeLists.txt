@@ -50,6 +50,7 @@ COLMAP_ADD_LIBRARY(
         synthetic.h synthetic.cc
         track.h track.cc
         two_view_geometry.h two_view_geometry.cc
+        virtual_tracks.h virtual_tracks.cc
         visibility_pyramid.h visibility_pyramid.cc
     PUBLIC_LINK_LIBS
         colmap_sensor

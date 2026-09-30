@@ -30,14 +30,18 @@
 #include "colmap/sfm/incremental_mapper.h"
 
 #include "colmap/estimators/pose.h"
+#include "colmap/estimators/triangulation.h"
 #include "colmap/estimators/two_view_geometry.h"
 #include "colmap/geometry/triangulation.h"
+#include "colmap/math/math.h"
 #include "colmap/scene/projection.h"
 #include "colmap/sensor/bitmap.h"
 #include "colmap/util/misc.h"
 
+#include <algorithm>
 #include <array>
 #include <fstream>
+#include <tuple>
 
 namespace colmap {
 namespace {
@@ -96,6 +100,9 @@ bool IncrementalMapper::Options::Check() const {
   CHECK_OPTION_GE(filter_max_reproj_error, 0.0);
   CHECK_OPTION_GE(filter_min_tri_angle, 0.0);
   CHECK_OPTION_GE(max_reg_trials, 1);
+  CHECK_OPTION_GT(virtual_max_angular_error_deg, 0.0);
+  CHECK_OPTION_GE(virtual_min_tri_angle_deg, 0.0);
+  CHECK_OPTION_GE(virtual_max_num_per_image, 0);
   return true;
 }
 
@@ -145,6 +152,158 @@ void IncrementalMapper::EndReconstruction(const bool discard) {
   reconstruction_ = nullptr;
   obs_manager_.reset();
   triangulator_.reset();
+  virtual_tracks_.clear();
+}
+
+size_t IncrementalMapper::LoadVirtualTracks(const std::string& path) {
+  THROW_CHECK_NOTNULL(reconstruction_);
+  const std::vector<VirtualTrackFileObservation> observations =
+      ReadVirtualTrackObservations(path);
+  size_t num_unresolved = 0;
+  virtual_tracks_ =
+      ResolveVirtualTracks(observations, *reconstruction_, &num_unresolved);
+  size_t num_observations = 0;
+  for (const VirtualTrack& track : virtual_tracks_) {
+    num_observations += track.observations.size();
+  }
+  LOG(INFO) << StringPrintf(
+      "Loaded %d virtual tracks with %d observations from %s "
+      "(%d observations of unknown images dropped)",
+      static_cast<int>(virtual_tracks_.size()),
+      static_cast<int>(num_observations),
+      path.c_str(),
+      static_cast<int>(num_unresolved));
+  return virtual_tracks_.size();
+}
+
+const std::vector<VirtualTrack>& IncrementalMapper::VirtualTracks() const {
+  return virtual_tracks_;
+}
+
+IncrementalMapper::VirtualTrackReport IncrementalMapper::PrepareVirtualTracks(
+    const Options& options) {
+  THROW_CHECK_NOTNULL(reconstruction_);
+
+  VirtualTrackReport report;
+  report.num_tracks = virtual_tracks_.size();
+
+  EstimateTriangulationOptions tri_options;
+  tri_options.min_tri_angle = DegToRad(options.virtual_min_tri_angle_deg);
+  tri_options.residual_type =
+      TriangulationEstimator::ResidualType::ANGULAR_ERROR;
+  tri_options.ransac_options.max_error =
+      DegToRad(options.virtual_max_angular_error_deg);
+
+  std::vector<Eigen::Vector2d> points;
+  std::vector<Rigid3d const*> cams_from_world;
+  std::vector<Camera const*> cameras;
+  std::vector<size_t> obs_idxs;
+  std::vector<char> inlier_mask;
+
+  for (VirtualTrack& track : virtual_tracks_) {
+    track.is_triangulated = false;
+    points.clear();
+    cams_from_world.clear();
+    cameras.clear();
+    obs_idxs.clear();
+    for (size_t i = 0; i < track.observations.size(); ++i) {
+      VirtualObservation& obs = track.observations[i];
+      obs.active = false;
+      if (!reconstruction_->IsImageRegistered(obs.image_id)) {
+        continue;
+      }
+      const Image& image = reconstruction_->Image(obs.image_id);
+      points.push_back(obs.xy);
+      cams_from_world.push_back(&image.CamFromWorld());
+      cameras.push_back(image.CameraPtr());
+      obs_idxs.push_back(i);
+    }
+    report.num_observations_registered += points.size();
+    if (points.size() < 2) {
+      continue;
+    }
+    ++report.num_tracks_with_reg_observations;
+
+    Eigen::Vector3d xyz;
+    if (!EstimateTriangulation(tri_options,
+                               points,
+                               cams_from_world,
+                               cameras,
+                               &inlier_mask,
+                               &xyz)) {
+      report.num_observations_dropped_angular += points.size();
+      continue;
+    }
+
+    size_t num_inliers = 0;
+    for (size_t i = 0; i < obs_idxs.size(); ++i) {
+      if (inlier_mask[i]) {
+        track.observations[obs_idxs[i]].active = true;
+        ++num_inliers;
+      }
+    }
+    report.num_observations_dropped_angular += points.size() - num_inliers;
+    if (num_inliers < 2) {
+      for (const size_t obs_idx : obs_idxs) {
+        track.observations[obs_idx].active = false;
+      }
+      continue;
+    }
+    track.xyz = xyz;
+    track.is_triangulated = true;
+    ++report.num_tracks_triangulated;
+  }
+
+  if (options.virtual_max_num_per_image > 0) {
+    const size_t cap = static_cast<size_t>(options.virtual_max_num_per_image);
+    // (weight, track index, observation index) per image.
+    std::unordered_map<image_t, std::vector<std::tuple<double, size_t, size_t>>>
+        obs_per_image;
+    for (size_t t = 0; t < virtual_tracks_.size(); ++t) {
+      const VirtualTrack& track = virtual_tracks_[t];
+      if (!track.is_triangulated) {
+        continue;
+      }
+      for (size_t o = 0; o < track.observations.size(); ++o) {
+        const VirtualObservation& obs = track.observations[o];
+        if (obs.active) {
+          obs_per_image[obs.image_id].emplace_back(obs.weight, t, o);
+        }
+      }
+    }
+    for (auto& [image_id, obs_list] : obs_per_image) {
+      if (obs_list.size() <= cap) {
+        continue;
+      }
+      std::sort(
+          obs_list.begin(), obs_list.end(), [](const auto& a, const auto& b) {
+            if (std::get<0>(a) != std::get<0>(b)) {
+              return std::get<0>(a) > std::get<0>(b);
+            }
+            return std::make_pair(std::get<1>(a), std::get<2>(a)) <
+                   std::make_pair(std::get<1>(b), std::get<2>(b));
+          });
+      for (size_t i = cap; i < obs_list.size(); ++i) {
+        virtual_tracks_[std::get<1>(obs_list[i])]
+            .observations[std::get<2>(obs_list[i])]
+            .active = false;
+        ++report.num_observations_dropped_cap;
+      }
+    }
+    for (VirtualTrack& track : virtual_tracks_) {
+      if (track.is_triangulated && track.NumActiveObservations() < 2) {
+        track.is_triangulated = false;
+        --report.num_tracks_triangulated;
+      }
+    }
+  }
+
+  for (const VirtualTrack& track : virtual_tracks_) {
+    if (track.is_triangulated) {
+      report.num_residuals += track.NumActiveObservations();
+    }
+  }
+  return report;
 }
 
 bool IncrementalMapper::FindInitialImagePair(const Options& options,
@@ -647,9 +806,23 @@ IncrementalMapper::AdjustLocalBundle(
     }
 
     // Adjust the local bundle.
+    std::vector<VirtualTrack>* virtual_tracks = nullptr;
+    if (options.apply_virtual_tracks && ba_options.apply_virtual_tracks &&
+        !virtual_tracks_.empty()) {
+      const VirtualTrackReport vt_report = PrepareVirtualTracks(options);
+      VLOG(1) << StringPrintf(
+          "=> Virtual tracks (local BA): %d/%d triangulated, %d residuals, "
+          "%d observations dropped by angular filter, %d by per-image cap",
+          static_cast<int>(vt_report.num_tracks_triangulated),
+          static_cast<int>(vt_report.num_tracks),
+          static_cast<int>(vt_report.num_residuals),
+          static_cast<int>(vt_report.num_observations_dropped_angular),
+          static_cast<int>(vt_report.num_observations_dropped_cap));
+      virtual_tracks = &virtual_tracks_;
+    }
     std::unique_ptr<BundleAdjuster> bundle_adjuster =
         CreateDefaultBundleAdjuster(
-            ba_options, std::move(ba_config), *reconstruction_);
+            ba_options, std::move(ba_config), *reconstruction_, virtual_tracks);
     const ceres::Solver::Summary summary = bundle_adjuster->Solve();
 
     report.num_adjusted_observations = summary.num_residuals / 2;
@@ -740,9 +913,32 @@ bool IncrementalMapper::AdjustGlobalBundle(
       ba_config.SetConstantCamPositions(*reg_image_ids_it, {0});  // 2nd image
     }
 
-    bundle_adjuster = CreateDefaultBundleAdjuster(
-        std::move(custom_ba_options), std::move(ba_config), *reconstruction_);
+    std::vector<VirtualTrack>* virtual_tracks = nullptr;
+    if (options.apply_virtual_tracks &&
+        custom_ba_options.apply_virtual_tracks && !virtual_tracks_.empty()) {
+      const VirtualTrackReport vt_report = PrepareVirtualTracks(options);
+      LOG(INFO) << StringPrintf(
+          "Virtual tracks (global BA): %d loaded, %d with >= 2 registered "
+          "observations, %d triangulated, %d residuals added, %d observations "
+          "dropped by angular filter, %d by per-image cap",
+          static_cast<int>(vt_report.num_tracks),
+          static_cast<int>(vt_report.num_tracks_with_reg_observations),
+          static_cast<int>(vt_report.num_tracks_triangulated),
+          static_cast<int>(vt_report.num_residuals),
+          static_cast<int>(vt_report.num_observations_dropped_angular),
+          static_cast<int>(vt_report.num_observations_dropped_cap));
+      virtual_tracks = &virtual_tracks_;
+    }
+    bundle_adjuster = CreateDefaultBundleAdjuster(std::move(custom_ba_options),
+                                                  std::move(ba_config),
+                                                  *reconstruction_,
+                                                  virtual_tracks);
   } else {
+    if (options.apply_virtual_tracks && !virtual_tracks_.empty()) {
+      LOG_FIRST_N(WARNING, 1)
+          << "Virtual tracks are not supported together with pose priors; "
+             "ignoring them in global bundle adjustment.";
+    }
     PosePriorBundleAdjustmentOptions prior_options;
     prior_options.use_robust_loss_on_prior_position =
         options.use_robust_loss_on_prior_position;

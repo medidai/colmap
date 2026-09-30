@@ -368,6 +368,7 @@ ceres::Solver::Options BundleAdjustmentOptions::CreateSolverOptions(
 
 bool BundleAdjustmentOptions::Check() const {
   CHECK_OPTION_GE(loss_function_scale, 0);
+  CHECK_OPTION_GT(virtual_loss_scale, 0);
   CHECK_OPTION_LT(max_num_images_direct_dense_cpu_solver,
                   max_num_images_direct_sparse_cpu_solver);
   CHECK_OPTION_LT(max_num_images_direct_dense_gpu_solver,
@@ -441,7 +442,8 @@ class DefaultBundleAdjuster : public BundleAdjuster {
  public:
   DefaultBundleAdjuster(BundleAdjustmentOptions options,
                         BundleAdjustmentConfig config,
-                        Reconstruction& reconstruction)
+                        Reconstruction& reconstruction,
+                        std::vector<VirtualTrack>* virtual_tracks = nullptr)
       : BundleAdjuster(std::move(options), std::move(config)),
         loss_function_(std::unique_ptr<ceres::LossFunction>(
             options_.CreateLossFunction())) {
@@ -460,6 +462,12 @@ class DefaultBundleAdjuster : public BundleAdjuster {
     }
     for (const auto point3D_id : config_.ConstantPoints()) {
       AddPointToProblem(point3D_id, reconstruction);
+    }
+
+    // Virtual tracks are added last so that they can never change which
+    // pose / intrinsics blocks are part of the problem or held constant.
+    if (options_.apply_virtual_tracks && virtual_tracks != nullptr) {
+      AddVirtualTracksToProblem(*virtual_tracks, reconstruction);
     }
 
     ParameterizeCameras(
@@ -627,9 +635,95 @@ class DefaultBundleAdjuster : public BundleAdjuster {
     }
   }
 
+  // Adds one reprojection residual per active observation of every
+  // triangulated virtual track. Observations of images whose pose block is
+  // not (variably) part of the problem are added with a constant pose, so
+  // virtual tracks only ever refine poses that real observations already
+  // refine. Intrinsics of cameras that are new to the problem are fixed, as in
+  // `AddPointToProblem`.
+  void AddVirtualTracksToProblem(std::vector<VirtualTrack>& virtual_tracks,
+                                 Reconstruction& reconstruction) {
+    // ceres::ArctanLoss(a): rho(s) = a * atan(s / a) with s the squared
+    // residual norm, i.e. `a` is in squared pixels.
+    const double a = options_.virtual_loss_scale * options_.virtual_loss_scale;
+    virtual_loss_function_ = std::make_unique<ceres::ArctanLoss>(a);
+
+    size_t num_tracks = 0;
+    size_t num_residuals = 0;
+    for (VirtualTrack& track : virtual_tracks) {
+      if (!track.is_triangulated || track.NumActiveObservations() < 2) {
+        continue;
+      }
+      // Tracks seen by none of the adjusted images cannot influence them.
+      bool observed_by_config_image = false;
+      for (const VirtualObservation& obs : track.observations) {
+        if (obs.active && config_.HasImage(obs.image_id)) {
+          observed_by_config_image = true;
+          break;
+        }
+      }
+      if (!observed_by_config_image) {
+        continue;
+      }
+      ++num_tracks;
+      for (const VirtualObservation& obs : track.observations) {
+        if (!obs.active) {
+          continue;
+        }
+        Image& image = reconstruction.Image(obs.image_id);
+        Camera& camera = *image.CameraPtr();
+        double* cam_from_world_rotation =
+            image.CamFromWorld().rotation.coeffs().data();
+        double* cam_from_world_translation =
+            image.CamFromWorld().translation.data();
+        double* camera_params = camera.params.data();
+
+        if (camera_ids_.count(image.CameraId()) == 0) {
+          camera_ids_.insert(image.CameraId());
+          config_.SetConstantCamIntrinsics(image.CameraId());
+        }
+
+        virtual_scaled_losses_.push_back(
+            std::make_unique<ceres::ScaledLoss>(virtual_loss_function_.get(),
+                                                obs.weight,
+                                                ceres::DO_NOT_TAKE_OWNERSHIP));
+        ceres::LossFunction* loss = virtual_scaled_losses_.back().get();
+
+        const bool variable_pose =
+            config_.HasImage(obs.image_id) && options_.refine_extrinsics &&
+            !config_.HasConstantCamPose(obs.image_id) &&
+            problem_->HasParameterBlock(cam_from_world_rotation);
+        if (variable_pose) {
+          problem_->AddResidualBlock(
+              CreateCameraCostFunction<ReprojErrorCostFunctor>(camera.model_id,
+                                                               obs.xy),
+              loss,
+              cam_from_world_rotation,
+              cam_from_world_translation,
+              track.xyz.data(),
+              camera_params);
+        } else {
+          image.CamFromWorld().rotation.normalize();
+          problem_->AddResidualBlock(
+              CreateCameraCostFunction<ReprojErrorConstantPoseCostFunctor>(
+                  camera.model_id, obs.xy, image.CamFromWorld()),
+              loss,
+              track.xyz.data(),
+              camera_params);
+        }
+        ++num_residuals;
+      }
+    }
+    VLOG(1) << StringPrintf("=> Virtual tracks in BA: %d tracks, %d residuals",
+                            static_cast<int>(num_tracks),
+                            static_cast<int>(num_residuals));
+  }
+
  private:
   std::shared_ptr<ceres::Problem> problem_;
   std::unique_ptr<ceres::LossFunction> loss_function_;
+  std::unique_ptr<ceres::LossFunction> virtual_loss_function_;
+  std::vector<std::unique_ptr<ceres::LossFunction>> virtual_scaled_losses_;
 
   std::unordered_set<camera_t> camera_ids_;
   std::unordered_map<point3D_t, size_t> point3D_num_observations_;
@@ -1153,6 +1247,15 @@ std::unique_ptr<BundleAdjuster> CreateDefaultBundleAdjuster(
     Reconstruction& reconstruction) {
   return std::make_unique<DefaultBundleAdjuster>(
       std::move(options), std::move(config), reconstruction);
+}
+
+std::unique_ptr<BundleAdjuster> CreateDefaultBundleAdjuster(
+    BundleAdjustmentOptions options,
+    BundleAdjustmentConfig config,
+    Reconstruction& reconstruction,
+    std::vector<VirtualTrack>* virtual_tracks) {
+  return std::make_unique<DefaultBundleAdjuster>(
+      std::move(options), std::move(config), reconstruction, virtual_tracks);
 }
 
 std::unique_ptr<BundleAdjuster> CreateRigBundleAdjuster(

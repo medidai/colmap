@@ -31,6 +31,7 @@
 
 #include "colmap/scene/camera_rig.h"
 #include "colmap/scene/reconstruction.h"
+#include "colmap/scene/virtual_tracks.h"
 #include "colmap/util/eigen_alignment.h"
 
 #include <memory>
@@ -133,6 +134,16 @@ struct BundleAdjustmentOptions {
   // Disable constraints
   bool apply_constraints = true;
 
+  // Whether to add reprojection residuals of externally supplied virtual
+  // tracks (see scene/virtual_tracks.h). Only has an effect when the bundle
+  // adjuster is created with a set of prepared virtual tracks.
+  bool apply_virtual_tracks = false;
+
+  // Virtual track residuals use a bounded Arctan loss so that wrong virtual
+  // correspondences cannot dominate the real observations. The scale is the
+  // reprojection error in pixels at which the loss saturates.
+  double virtual_loss_scale = 2.0;
+
   // Whether to print a final summary.
   bool print_summary = true;
 
@@ -233,6 +244,17 @@ std::unique_ptr<BundleAdjuster> CreateDefaultBundleAdjuster(
     BundleAdjustmentOptions options,
     BundleAdjustmentConfig config,
     Reconstruction& reconstruction);
+
+// Default bundle adjuster that additionally adds one reprojection residual per
+// active observation of every triangulated virtual track. The virtual tracks
+// must have been prepared (triangulated and filtered with the current poses)
+// by the caller and must outlive the returned adjuster; their `xyz` are free
+// parameter blocks of the problem.
+std::unique_ptr<BundleAdjuster> CreateDefaultBundleAdjuster(
+    BundleAdjustmentOptions options,
+    BundleAdjustmentConfig config,
+    Reconstruction& reconstruction,
+    std::vector<VirtualTrack>* virtual_tracks);
 
 std::unique_ptr<BundleAdjuster> CreateRigBundleAdjuster(
     BundleAdjustmentOptions options,
