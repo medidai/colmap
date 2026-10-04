@@ -530,6 +530,18 @@ void OptionManager::AddMapperOptions() {
                               &mapper->ba_refine_extra_params);
   AddAndRegisterDefaultOption("Mapper.ba_apply_constraints",
                               &mapper->ba_apply_constraints);
+  AddAndRegisterDefaultOption("Mapper.ba_apply_virtual_tracks",
+                              &mapper->ba_apply_virtual_tracks);
+  AddAndRegisterDefaultOption("Mapper.virtual_tracks_path",
+                              &mapper->virtual_tracks_path);
+  AddAndRegisterDefaultOption("Mapper.ba_virtual_loss_scale",
+                              &mapper->ba_virtual_loss_scale);
+  AddAndRegisterDefaultOption("Mapper.ba_virtual_max_angular_error_deg",
+                              &mapper->ba_virtual_max_angular_error_deg);
+  AddAndRegisterDefaultOption("Mapper.ba_virtual_min_tri_angle_deg",
+                              &mapper->ba_virtual_min_tri_angle_deg);
+  AddAndRegisterDefaultOption("Mapper.ba_virtual_max_num_per_image",
+                              &mapper->ba_virtual_max_num_per_image);
   AddAndRegisterDefaultOption("Mapper.ba_local_num_images",
                               &mapper->ba_local_num_images);
   AddAndRegisterDefaultOption("Mapper.ba_local_function_tolerance",

@@ -33,6 +33,7 @@
 #include "colmap/scene/database.h"
 #include "colmap/scene/database_cache.h"
 #include "colmap/scene/reconstruction.h"
+#include "colmap/scene/virtual_tracks.h"
 #include "colmap/sfm/incremental_triangulator.h"
 #include "colmap/sfm/observation_manager.h"
 
@@ -131,6 +132,22 @@ class IncrementalMapper {
     // Number of threads.
     int num_threads = -1;
 
+    // Whether to add virtual track residuals (scene/virtual_tracks.h) to local
+    // and global bundle adjustment. Requires `LoadVirtualTracks` to have been
+    // called for the current reconstruction.
+    bool apply_virtual_tracks = false;
+
+    // Virtual observations whose angular reprojection error (in degrees)
+    // w.r.t. the track's triangulated point exceeds this are not used.
+    double virtual_max_angular_error_deg = 0.5;
+
+    // Minimum triangulation angle in degrees for a virtual track to be used.
+    double virtual_min_tri_angle_deg = 1.5;
+
+    // Maximum number of virtual residuals per image and bundle adjustment;
+    // the lowest-weight observations are dropped first. 0 disables the cap.
+    int virtual_max_num_per_image = 0;
+
     // Method to find and select next best image to register.
     enum class ImageSelectionMethod {
       MAX_VISIBLE_POINTS_NUM,
@@ -150,6 +167,16 @@ class IncrementalMapper {
     size_t num_adjusted_observations = 0;
   };
 
+  struct VirtualTrackReport {
+    size_t num_tracks = 0;
+    size_t num_tracks_with_reg_observations = 0;
+    size_t num_tracks_triangulated = 0;
+    size_t num_observations_registered = 0;
+    size_t num_observations_dropped_angular = 0;
+    size_t num_observations_dropped_cap = 0;
+    size_t num_residuals = 0;
+  };
+
   // Create incremental mapper. The database cache must live for the entire
   // life-time of the incremental mapper.
   explicit IncrementalMapper(
@@ -165,6 +192,46 @@ class IncrementalMapper {
   // model is discarded, the number of total and shared registered images will
   // be updated accordingly.
   void EndReconstruction(bool discard);
+
+  // Load virtual tracks (see scene/virtual_tracks.h) for the current
+  // reconstruction. Image names are resolved against the reconstruction, so
+  // this must be called after `BeginReconstruction`. Returns the number of
+  // loaded tracks. The tracks are discarded in `EndReconstruction`.
+  size_t LoadVirtualTracks(const std::string& path);
+
+  // (Re)triangulate every virtual track from the observations of currently
+  // registered images and mark the observations that pass the angular error,
+  // triangulation angle and per-image cap filters as active. Called before
+  // each bundle adjustment when `Options::apply_virtual_tracks` is set.
+  VirtualTrackReport PrepareVirtualTracks(const Options& options);
+
+  // Reprojection errors (pixels) of all active observations of triangulated
+  // virtual tracks under the current poses. Observations that project behind
+  // the camera are counted in `num_behind_camera` and excluded from the
+  // percentiles.
+  struct VirtualTrackResidualStats {
+    size_t num_residuals = 0;
+    size_t num_behind_camera = 0;
+    size_t num_negative = 0;
+    double p50_px = 0;
+    double p90_px = 0;
+    double max_px = 0;
+    size_t num_beyond_loss_scale = 0;
+    size_t num_beyond_10px = 0;
+  };
+  VirtualTrackResidualStats ComputeVirtualTrackResiduals(
+      double loss_scale_px) const;
+
+  // One-line human readable summary of `ComputeVirtualTrackResiduals`.
+  std::string FormatVirtualTrackResiduals(
+      const VirtualTrackResidualStats& stats, double loss_scale_px) const;
+
+  // Log, at INFO, where the active virtual residuals of the current state sit:
+  // per-image counts (top images) and the residual statistics.
+  void LogVirtualTrackSummary(const std::string& prefix,
+                              double loss_scale_px) const;
+
+  const std::vector<VirtualTrack>& VirtualTracks() const;
 
   // Find initial image pair to seed the incremental reconstruction. The image
   // pairs should be passed to `RegisterInitialImagePair`. This function
@@ -348,6 +415,15 @@ class IncrementalMapper {
   // This image list will be non-empty, if the reconstruction is continued from
   // an existing reconstruction.
   std::unordered_set<image_t> existing_image_ids_;
+
+  // Virtual tracks of the current reconstruction. Owned by the mapper and
+  // never written to the reconstruction; the bundle adjuster holds raw
+  // pointers into this vector, so it must not be resized between
+  // `PrepareVirtualTracks` and the end of the adjustment.
+  std::vector<VirtualTrack> virtual_tracks_;
+  // Loss scale of the last bundle adjustment that used virtual tracks; only
+  // used to label the residual statistics in the logs.
+  double virtual_loss_scale_px_ = 2.2360679775;
 };
 
 }  // namespace colmap

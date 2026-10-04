@@ -85,6 +85,23 @@ struct IncrementalPipelineOptions {
   bool ba_refine_extra_params = true;
   bool ba_apply_constraints = true;
 
+  // Virtual tracks (scene/virtual_tracks.h): externally supplied
+  // correspondences used only as bounded-loss reprojection residuals in local
+  // and global bundle adjustment. `virtual_tracks_path` is the text file to
+  // load per reconstruction; empty disables loading.
+  bool ba_apply_virtual_tracks = false;
+  std::string virtual_tracks_path = "";
+  // Arctan loss saturation for virtual residuals, in pixels (GLUEMAP: sqrt(5)).
+  double ba_virtual_loss_scale = 2.2360679775;
+  // Angular reprojection error (degrees) above which a virtual observation is
+  // dropped before each bundle adjustment.
+  double ba_virtual_max_angular_error_deg = 0.5;
+  // Minimum triangulation angle (degrees) of a virtual track to be used.
+  double ba_virtual_min_tri_angle_deg = 1.5;
+  // Maximum number of virtual residuals per image (0 = unlimited). GLUEMAP
+  // has no such cap; it limits virtual tracks at generation time instead.
+  int ba_virtual_max_num_per_image = 0;
+
   // The minimum number of residuals per bundle adjustment problem to
   // enable multi-threading solving of the problems.
   int ba_min_num_residuals_for_cpu_multi_threading = 50000;

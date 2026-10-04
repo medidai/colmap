@@ -104,6 +104,17 @@ void BindBundleAdjuster(py::module& m) {
           .def_readwrite("refine_extrinsics",
                          &BAOpts::refine_extrinsics,
                          "Whether to refine the extrinsic parameter group.")
+          .def_readwrite("apply_constraints",
+                         &BAOpts::apply_constraints,
+                         "Whether to apply constraining point residuals.")
+          .def_readwrite("apply_virtual_tracks",
+                         &BAOpts::apply_virtual_tracks,
+                         "Whether to add virtual track residuals when the "
+                         "adjuster is created with virtual tracks.")
+          .def_readwrite("virtual_loss_scale",
+                         &BAOpts::virtual_loss_scale,
+                         "Arctan loss saturation for virtual residuals in "
+                         "pixels.")
           .def_readwrite("print_summary",
                          &BAOpts::print_summary,
                          "Whether to print a final summary.")
@@ -187,7 +198,9 @@ void BindBundleAdjuster(py::module& m) {
       .def_property_readonly("config", &BundleAdjuster::Config);
 
   m.def("create_default_bundle_adjuster",
-        CreateDefaultBundleAdjuster,
+        py::overload_cast<BundleAdjustmentOptions,
+                          BundleAdjustmentConfig,
+                          Reconstruction&>(&CreateDefaultBundleAdjuster),
         "options"_a,
         "config"_a,
         "reconstruction"_a);
