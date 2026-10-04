@@ -141,8 +141,9 @@ struct BundleAdjustmentOptions {
 
   // Virtual track residuals use a bounded Arctan loss so that wrong virtual
   // correspondences cannot dominate the real observations. The scale is the
-  // reprojection error in pixels at which the loss saturates.
-  double virtual_loss_scale = 2.0;
+  // reprojection error in pixels at which the loss saturates. GLUEMAP uses
+  // ceres::ArctanLoss(5.0) on the squared error, i.e. sqrt(5) px.
+  double virtual_loss_scale = 2.2360679775;
 
   // Whether to print a final summary.
   bool print_summary = true;

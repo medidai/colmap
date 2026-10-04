@@ -422,7 +422,7 @@ class IncrementalMapper {
   std::vector<VirtualTrack> virtual_tracks_;
   // Loss scale of the last bundle adjustment that used virtual tracks; only
   // used to label the residual statistics in the logs.
-  double virtual_loss_scale_px_ = 2.0;
+  double virtual_loss_scale_px_ = 2.2360679775;
 };
 
 }  // namespace colmap

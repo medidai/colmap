@@ -91,8 +91,8 @@ struct IncrementalPipelineOptions {
   // load per reconstruction; empty disables loading.
   bool ba_apply_virtual_tracks = false;
   std::string virtual_tracks_path = "";
-  // Arctan loss saturation for virtual residuals, in pixels.
-  double ba_virtual_loss_scale = 2.0;
+  // Arctan loss saturation for virtual residuals, in pixels (GLUEMAP: sqrt(5)).
+  double ba_virtual_loss_scale = 2.2360679775;
   // Angular reprojection error (degrees) above which a virtual observation is
   // dropped before each bundle adjustment.
   double ba_virtual_max_angular_error_deg = 0.5;
