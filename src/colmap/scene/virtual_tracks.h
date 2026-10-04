@@ -55,6 +55,12 @@ struct VirtualObservation {
   Eigen::Vector2d xy = Eigen::Vector2d::Zero();
   // Scales the robust loss of this residual (typically model confidence).
   double weight = 1.0;
+  // The generating model placed the point behind this camera and `xy` is the
+  // antipodal projection (the pixel of the point reflected through the camera
+  // centre). The residual then projects the negated point, as in GLUEMAP's
+  // negative-depth cost: the observation still constrains the pose through the
+  // reversed ray, even though nothing is visible at `xy`.
+  bool negative = false;
   // Set before every bundle adjustment: whether the observation passed the
   // triangulation / angular error filter and is used as a residual.
   bool active = false;
@@ -83,8 +89,13 @@ struct VirtualTrackFileObservation {
   std::string image_name;
   Eigen::Vector2d xy = Eigen::Vector2d::Zero();
   double weight = 1.0;
+  bool negative = false;
 };
 
+// File format: one observation per line,
+//   track_id x y weight image_name [negative]
+// with `negative` an optional 0/1 (default 0); lines starting with '#' are
+// comments.
 std::vector<VirtualTrackFileObservation> ReadVirtualTrackObservations(
     const std::string& path);
 

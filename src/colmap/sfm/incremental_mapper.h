@@ -146,7 +146,7 @@ class IncrementalMapper {
 
     // Maximum number of virtual residuals per image and bundle adjustment;
     // the lowest-weight observations are dropped first. 0 disables the cap.
-    int virtual_max_num_per_image = 200;
+    int virtual_max_num_per_image = 0;
 
     // Method to find and select next best image to register.
     enum class ImageSelectionMethod {
@@ -212,6 +212,7 @@ class IncrementalMapper {
   struct VirtualTrackResidualStats {
     size_t num_residuals = 0;
     size_t num_behind_camera = 0;
+    size_t num_negative = 0;
     double p50_px = 0;
     double p90_px = 0;
     double max_px = 0;

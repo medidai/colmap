@@ -72,6 +72,10 @@ std::vector<VirtualTrackFileObservation> ReadVirtualTrackObservations(
       LOG(FATAL_THROW) << "Malformed virtual track line " << line_number
                        << " in " << path << ": " << line;
     }
+    int negative = 0;
+    if (line_stream >> negative) {
+      obs.negative = negative != 0;
+    }
     observations.push_back(std::move(obs));
   }
   return observations;
@@ -103,6 +107,7 @@ std::vector<VirtualTrack> ResolveVirtualTracks(
     obs.image_id = it->second;
     obs.xy = file_obs.xy;
     obs.weight = file_obs.weight;
+    obs.negative = file_obs.negative;
     tracks[file_obs.track_id].observations.push_back(obs);
   }
 

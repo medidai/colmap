@@ -650,6 +650,7 @@ class DefaultBundleAdjuster : public BundleAdjuster {
 
     size_t num_tracks = 0;
     size_t num_residuals = 0;
+    size_t num_negative = 0;
     for (VirtualTrack& track : virtual_tracks) {
       if (!track.is_triangulated || track.NumActiveObservations() < 2) {
         continue;
@@ -695,8 +696,12 @@ class DefaultBundleAdjuster : public BundleAdjuster {
             problem_->HasParameterBlock(cam_from_world_rotation);
         if (variable_pose) {
           problem_->AddResidualBlock(
-              CreateCameraCostFunction<ReprojErrorCostFunctor>(camera.model_id,
-                                                               obs.xy),
+              obs.negative
+                  ? CreateCameraCostFunction<
+                        NegativeDepthReprojErrorCostFunctor>(camera.model_id,
+                                                             obs.xy)
+                  : CreateCameraCostFunction<ReprojErrorCostFunctor>(
+                        camera.model_id, obs.xy),
               loss,
               cam_from_world_rotation,
               cam_from_world_translation,
@@ -705,18 +710,28 @@ class DefaultBundleAdjuster : public BundleAdjuster {
         } else {
           image.CamFromWorld().rotation.normalize();
           problem_->AddResidualBlock(
-              CreateCameraCostFunction<ReprojErrorConstantPoseCostFunctor>(
-                  camera.model_id, obs.xy, image.CamFromWorld()),
+              obs.negative
+                  ? CreateCameraCostFunction<
+                        NegativeDepthReprojErrorConstantPoseCostFunctor>(
+                        camera.model_id, obs.xy, image.CamFromWorld())
+                  : CreateCameraCostFunction<
+                        ReprojErrorConstantPoseCostFunctor>(
+                        camera.model_id, obs.xy, image.CamFromWorld()),
               loss,
               track.xyz.data(),
               camera_params);
         }
+        if (obs.negative) {
+          ++num_negative;
+        }
         ++num_residuals;
       }
     }
-    VLOG(1) << StringPrintf("=> Virtual tracks in BA: %d tracks, %d residuals",
-                            static_cast<int>(num_tracks),
-                            static_cast<int>(num_residuals));
+    VLOG(1) << StringPrintf(
+        "=> Virtual tracks in BA: %d tracks, %d residuals (%d negative depth)",
+        static_cast<int>(num_tracks),
+        static_cast<int>(num_residuals),
+        static_cast<int>(num_negative));
   }
 
  private:

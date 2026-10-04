@@ -41,6 +41,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <deque>
 #include <fstream>
 #include <limits>
 #include <set>
@@ -254,13 +255,20 @@ IncrementalMapper::ComputeVirtualTrackResiduals(
         continue;
       }
       const Image& image = reconstruction_->Image(obs.image_id);
-      const double squared_error = CalculateSquaredReprojectionError(
-          obs.xy, track.xyz, image.CamFromWorld(), *image.CameraPtr());
+      Eigen::Vector3d point_in_cam = image.CamFromWorld() * track.xyz;
+      if (obs.negative) {
+        // Antipodal observation: the residual projects the negated point.
+        point_in_cam = -point_in_cam;
+        ++stats.num_negative;
+      }
       ++stats.num_residuals;
-      if (squared_error == std::numeric_limits<double>::max()) {
+      if (point_in_cam.z() <= 0) {
         ++stats.num_behind_camera;
         continue;
       }
+      const double squared_error =
+          (image.CameraPtr()->ImgFromCam(point_in_cam.hnormalized()) - obs.xy)
+              .squaredNorm();
       const double error = std::sqrt(squared_error);
       errors.push_back(error);
       if (error > loss_scale_px) {
@@ -285,10 +293,12 @@ std::string IncrementalMapper::FormatVirtualTrackResiduals(
     return "no active virtual residuals";
   }
   return StringPrintf(
-      "%d virtual residuals: reprojection error p50 %.2f px, p90 %.2f px, "
-      "max %.1f px; %d beyond the loss scale (%.1f px), %d beyond 10 px, "
+      "%d virtual residuals (%d negative depth): reprojection error p50 %.2f "
+      "px, p90 %.2f px, max %.1f px; %d beyond the loss scale (%.1f px), %d "
+      "beyond 10 px, "
       "%d behind camera",
       static_cast<int>(stats.num_residuals),
+      static_cast<int>(stats.num_negative),
       stats.p50_px,
       stats.p90_px,
       stats.max_px,
@@ -388,6 +398,13 @@ IncrementalMapper::VirtualTrackReport IncrementalMapper::PrepareVirtualTracks(
   std::vector<Camera const*> cameras;
   std::vector<size_t> obs_idxs;
   std::vector<char> inlier_mask;
+  // Negative-depth observations enter the triangulation through a camera
+  // rotated by 180 deg about its x axis and the pixel mirrored through the
+  // principal point: that camera's ray through the mirrored pixel is the
+  // reversed original ray, so the behind-camera point lies in front of it.
+  // Exact for radially symmetric distortion models.
+  std::deque<Rigid3d> flipped_poses;
+  const Eigen::Quaterniond flip_x(Eigen::AngleAxisd(M_PI, Eigen::Vector3d::UnitX()));
 
   for (VirtualTrack& track : virtual_tracks_) {
     track.is_triangulated = false;
@@ -395,6 +412,7 @@ IncrementalMapper::VirtualTrackReport IncrementalMapper::PrepareVirtualTracks(
     cams_from_world.clear();
     cameras.clear();
     obs_idxs.clear();
+    flipped_poses.clear();
     for (size_t i = 0; i < track.observations.size(); ++i) {
       VirtualObservation& obs = track.observations[i];
       obs.active = false;
@@ -402,8 +420,18 @@ IncrementalMapper::VirtualTrackReport IncrementalMapper::PrepareVirtualTracks(
         continue;
       }
       const Image& image = reconstruction_->Image(obs.image_id);
-      points.push_back(obs.xy);
-      cams_from_world.push_back(&image.CamFromWorld());
+      if (obs.negative) {
+        const Camera& camera = *image.CameraPtr();
+        points.emplace_back(2.0 * camera.PrincipalPointX() - obs.xy(0),
+                            obs.xy(1));
+        const Rigid3d& cam_from_world = image.CamFromWorld();
+        flipped_poses.emplace_back(flip_x * cam_from_world.rotation,
+                                   flip_x * cam_from_world.translation);
+        cams_from_world.push_back(&flipped_poses.back());
+      } else {
+        points.push_back(obs.xy);
+        cams_from_world.push_back(&image.CamFromWorld());
+      }
       cameras.push_back(image.CameraPtr());
       obs_idxs.push_back(i);
     }
