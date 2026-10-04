@@ -33,6 +33,7 @@
 #include "colmap/util/eigen_alignment.h"
 #include "colmap/util/types.h"
 
+#include <set>
 #include <string>
 #include <vector>
 
@@ -90,10 +91,12 @@ std::vector<VirtualTrackFileObservation> ReadVirtualTrackObservations(
 // Groups file observations by track id and resolves image names to image ids
 // of the given reconstruction. Observations of unknown images and tracks with
 // fewer than two remaining observations are dropped; the number of dropped
-// observations is returned through `num_unresolved`.
+// observations is returned through `num_unresolved`, their image names
+// through `unresolved_image_names`.
 std::vector<VirtualTrack> ResolveVirtualTracks(
     const std::vector<VirtualTrackFileObservation>& observations,
     const Reconstruction& reconstruction,
-    size_t* num_unresolved = nullptr);
+    size_t* num_unresolved = nullptr,
+    std::set<std::string>* unresolved_image_names = nullptr);
 
 }  // namespace colmap

@@ -35,6 +35,7 @@
 
 #include <fstream>
 #include <map>
+#include <set>
 #include <sstream>
 #include <unordered_map>
 
@@ -79,7 +80,8 @@ std::vector<VirtualTrackFileObservation> ReadVirtualTrackObservations(
 std::vector<VirtualTrack> ResolveVirtualTracks(
     const std::vector<VirtualTrackFileObservation>& observations,
     const Reconstruction& reconstruction,
-    size_t* num_unresolved) {
+    size_t* num_unresolved,
+    std::set<std::string>* unresolved_image_names) {
   std::unordered_map<std::string, image_t> image_ids;
   for (const auto& [image_id, image] : reconstruction.Images()) {
     image_ids.emplace(image.Name(), image_id);
@@ -92,6 +94,9 @@ std::vector<VirtualTrack> ResolveVirtualTracks(
     const auto it = image_ids.find(file_obs.image_name);
     if (it == image_ids.end()) {
       ++unresolved;
+      if (unresolved_image_names != nullptr) {
+        unresolved_image_names->insert(file_obs.image_name);
+      }
       continue;
     }
     VirtualObservation obs;

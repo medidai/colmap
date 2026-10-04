@@ -205,6 +205,31 @@ class IncrementalMapper {
   // each bundle adjustment when `Options::apply_virtual_tracks` is set.
   VirtualTrackReport PrepareVirtualTracks(const Options& options);
 
+  // Reprojection errors (pixels) of all active observations of triangulated
+  // virtual tracks under the current poses. Observations that project behind
+  // the camera are counted in `num_behind_camera` and excluded from the
+  // percentiles.
+  struct VirtualTrackResidualStats {
+    size_t num_residuals = 0;
+    size_t num_behind_camera = 0;
+    double p50_px = 0;
+    double p90_px = 0;
+    double max_px = 0;
+    size_t num_beyond_loss_scale = 0;
+    size_t num_beyond_10px = 0;
+  };
+  VirtualTrackResidualStats ComputeVirtualTrackResiduals(
+      double loss_scale_px) const;
+
+  // One-line human readable summary of `ComputeVirtualTrackResiduals`.
+  std::string FormatVirtualTrackResiduals(
+      const VirtualTrackResidualStats& stats, double loss_scale_px) const;
+
+  // Log, at INFO, where the active virtual residuals of the current state sit:
+  // per-image counts (top images) and the residual statistics.
+  void LogVirtualTrackSummary(const std::string& prefix,
+                              double loss_scale_px) const;
+
   const std::vector<VirtualTrack>& VirtualTracks() const;
 
   // Find initial image pair to seed the incremental reconstruction. The image
@@ -395,6 +420,9 @@ class IncrementalMapper {
   // pointers into this vector, so it must not be resized between
   // `PrepareVirtualTracks` and the end of the adjustment.
   std::vector<VirtualTrack> virtual_tracks_;
+  // Loss scale of the last bundle adjustment that used virtual tracks; only
+  // used to label the residual statistics in the logs.
+  double virtual_loss_scale_px_ = 2.0;
 };
 
 }  // namespace colmap
