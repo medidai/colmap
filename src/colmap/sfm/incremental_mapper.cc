@@ -255,6 +255,11 @@ IncrementalMapper::ComputeVirtualTrackResiduals(
         continue;
       }
       const Image& image = reconstruction_->Image(obs.image_id);
+      if (!image.HasPose()) {
+        // Registered when the observation was activated, de-registered since
+        // (e.g. filtered at the end of the reconstruction).
+        continue;
+      }
       Eigen::Vector3d point_in_cam = image.CamFromWorld() * track.xyz;
       if (obs.negative) {
         // Antipodal observation: the residual projects the negated point.
