@@ -825,6 +825,8 @@ void OptionManager::AddGlobalMapperOptions() {
                    &global_mapper->mapper.ba_skip_fixed_rotation_stage);
   AddDefaultOption("GlobalMapper.ba_skip_joint_optimization_stage",
                    &global_mapper->mapper.ba_skip_joint_optimization_stage);
+  AddDefaultOption("GlobalMapper.ba_apply_constraints",
+                   &global_mapper->mapper.ba_apply_constraints);
 
   // Retriangulation options.
   AddDefaultOption(

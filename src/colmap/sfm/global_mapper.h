@@ -91,6 +91,11 @@ struct GlobalMapperOptions {
   // ba_skip_fixed_rotation_stage.
   bool ba_skip_joint_optimization_stage = false;
 
+  // Whether bundle adjustment adds the constraining-point residuals of
+  // constrained observations (Medida CCT markers). Mirrors
+  // IncrementalPipelineOptions::ba_apply_constraints.
+  bool ba_apply_constraints = true;
+
   // Control the flow of the global sfm
   bool skip_rotation_averaging = false;
   bool skip_track_establishment = false;

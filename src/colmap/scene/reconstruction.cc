@@ -383,8 +383,14 @@ void Reconstruction::Load(const DatabaseCache& database_cache) {
     }
   }
 
+  // Load() may run more than once on the same reconstruction (e.g. the global
+  // mapper's retriangulation re-enters IncrementalMapper::BeginReconstruction).
   for (const auto& [point3D_id, point3D] :
        database_cache.ConstrainingPoints3D()) {
+    if (ExistsConstrainingPoint3D(point3D_id)) {
+      // Keep the loaded point: it follows the reconstruction's transforms.
+      continue;
+    }
     AddConstrainingPoint3D(point3D_id, point3D);
   }
 }

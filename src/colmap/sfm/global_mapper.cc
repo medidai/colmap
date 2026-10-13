@@ -63,6 +63,7 @@ GlobalPositionerOptions GlobalMapperOptions::GlobalPositioning() const {
 BundleAdjustmentOptions GlobalMapperOptions::BundleAdjustment() const {
   BundleAdjustmentOptions opts = bundle_adjustment;
   opts.refine_sensor_from_rig = refine_sensor_from_rig;
+  opts.apply_constraints = ba_apply_constraints;
   if (opts.ceres) {
     opts.ceres->solver_options.num_threads = num_threads;
   }

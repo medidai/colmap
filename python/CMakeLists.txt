@@ -39,6 +39,10 @@ if(NOT TARGET gflags::gflags)
         add_library(gflags::gflags ALIAS gflags_static)
     endif()
 endif()
+# Distro CeresConfig requires the non-namespaced `gflags` target.
+if(TARGET gflags::gflags AND NOT TARGET gflags)
+    add_library(gflags ALIAS gflags::gflags)
+endif()
 
 find_package(colmap REQUIRED)
 

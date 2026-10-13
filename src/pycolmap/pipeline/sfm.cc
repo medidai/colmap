@@ -207,6 +207,7 @@ void BindSfM(py::module& m) {
                            &Opts::ba_skip_fixed_rotation_stage)
             .def_readwrite("ba_skip_joint_optimization_stage",
                            &Opts::ba_skip_joint_optimization_stage)
+            .def_readwrite("ba_apply_constraints", &Opts::ba_apply_constraints)
             .def_readwrite("skip_rotation_averaging",
                            &Opts::skip_rotation_averaging)
             .def_readwrite("skip_track_establishment",
