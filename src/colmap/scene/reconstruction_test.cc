@@ -924,8 +924,9 @@ TEST(Reconstruction, Transform) {
   EXPECT_EQ(reconstruction.Image(1).ProjectionCenter(),
             Eigen::Vector3d(0, 1, 2));
   EXPECT_EQ(reconstruction.Point3D(point3D_id).xyz, Eigen::Vector3d(2, 3, 4));
+  // Constraining points are world-frame targets and stay put.
   EXPECT_EQ(reconstruction.ConstrainingPoint3D(constraint_id).xyz,
-            Eigen::Vector3d(2, 5, 8));
+            Eigen::Vector3d(1, 2, 3));
 }
 
 TEST(Reconstruction, FindImageWithName) {

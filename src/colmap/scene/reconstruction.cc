@@ -860,9 +860,8 @@ void Reconstruction::Transform(const Sim3d& new_from_old_world) {
   for (auto& [_, point3D] : points3D_) {
     point3D.xyz = new_from_old_world * point3D.xyz;
   }
-  for (auto& [_, point3D] : constraining_points3D_) {
-    point3D.xyz = new_from_old_world * point3D.xyz;
-  }
+  // Constraining points are world-frame targets (e.g. CCT ground truth) that
+  // the reconstruction is aligned to later; they must not follow the model.
 }
 
 Reconstruction Reconstruction::Crop(const Eigen::AlignedBox3d& bbox) const {

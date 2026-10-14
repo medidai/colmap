@@ -791,9 +791,11 @@ void WriteMedidaDeltaBinary(const Reconstruction& reconstruction,
   WriteBinaryLittleEndian<uint32_t>(&file, kMedidaSparseSidecarVersion);
   WriteBinaryLittleEndian<uint32_t>(&file, 0);
 
-  // Writing observation weights
-  WriteBinaryLittleEndian<uint64_t>(&file, reconstruction.NumImages());
-  for (const auto& [image_id, image] : reconstruction.Images()) {
+  // Writing observation weights. Only registered images are written to
+  // images.bin, so the sidecar must cover the same set.
+  WriteBinaryLittleEndian<uint64_t>(&file, reconstruction.NumRegImages());
+  for (const image_t image_id : reconstruction.RegImageIds()) {
+    const Image& image = reconstruction.Image(image_id);
     WriteBinaryLittleEndian<image_t>(&file, image_id);
     WriteBinaryLittleEndian<uint64_t>(&file, image.NumPoints2D());
     for (const Point2D& point2D : image.Points2D()) {
